@@ -127,6 +127,9 @@ def _create_indexes(conn) -> None:
         "ON expenses(approved_by_actor_id);"
     )
 
+    # Leads
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_leads_created_at ON leads(created_at);")
+
     conn.commit()
 
 
@@ -517,6 +520,27 @@ def create_all(conn):
     # ------------------------------------------------------------------
     # CASH LAYER
     # ------------------------------------------------------------------
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS leads (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        phone TEXT NOT NULL,
+        whatsapp_number TEXT,
+        email TEXT,
+        source_channel TEXT NOT NULL,
+        pipeline_status TEXT NOT NULL DEFAULT 'NEW',
+        apartment_id INTEGER,
+        notes TEXT,
+        created_by INTEGER NOT NULL,
+        converted_to_booking_id INTEGER UNIQUE,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (apartment_id) REFERENCES apartments(id),
+        FOREIGN KEY (created_by) REFERENCES app_actors(id),
+        FOREIGN KEY (converted_to_booking_id) REFERENCES bookings(id)
+    );
+    """)
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS guest_payments (

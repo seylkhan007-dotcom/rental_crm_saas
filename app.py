@@ -11,6 +11,7 @@ from ui.owner_statement_page import render_owner_statement_page
 from ui.complexes_page import render_complexes_page
 from ui.apartments_page import render_apartments_page
 from ui.actors_page import render_actors_page
+from ui.leads_page import render_leads_page
 from ui.contracts_page import render_contracts_page
 from ui.bookings_page import render_bookings_page
 from ui.expenses_page import render_expenses_page
@@ -50,6 +51,7 @@ page = st.sidebar.radio(
         "Комплексы",
         "Квартиры",
         "Сотрудники и участники",
+        "Лиды",
         "Контракты",
         "Бронирования и финансы",
         "Расходы",
@@ -84,6 +86,9 @@ elif page == "Квартиры":
 
 elif page == "Сотрудники и участники":
     render_actors_page(conn)
+
+elif page == "Лиды":
+    render_leads_page(conn)
 
 elif page == "Контракты":
     render_contracts_page(conn)
