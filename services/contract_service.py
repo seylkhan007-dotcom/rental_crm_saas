@@ -8,7 +8,7 @@ class ContractService:
 
     ALLOWED_PRICING_MODELS = {"management", "sublease"}
     ALLOWED_SETTLEMENT_BASE_MODES = {"from_guest_price", "manual_base"}
-    ALLOWED_PROFIT_MODES = {"gross_split", "net_profit_split"}
+    ALLOWED_PROFIT_MODES = {"gross_split", "net_split"}
     ALLOWED_OTA_COST_MODES = {"company_only", "shared", "owner_only"}
     ALLOWED_EXPENSE_MODES = {"rule_based", "company_all", "owner_all", "profit_share_based"}
     ALLOWED_STAY_TYPES = {"all", "short_term", "long_term"}
@@ -50,7 +50,7 @@ class ContractService:
         normalized_profile_name = (profile_name or "").strip()
         normalized_pricing_model = (pricing_model or "management").strip()
         normalized_settlement_base_mode = (settlement_base_mode or "from_guest_price").strip()
-        normalized_profit_mode = (profit_mode or "gross_split").strip()
+        normalized_profit_mode = self._normalize_profit_mode(profit_mode)
         normalized_ota_cost_mode = (ota_cost_mode or "company_only").strip()
         normalized_expense_mode = (expense_mode or "rule_based").strip()
         normalized_notes = (notes or "").strip() or None
@@ -200,7 +200,7 @@ class ContractService:
         normalized_profile_name = (profile_name or "").strip()
         normalized_pricing_model = (pricing_model or "management").strip()
         normalized_settlement_base_mode = (settlement_base_mode or "from_guest_price").strip()
-        normalized_profit_mode = (profit_mode or "gross_split").strip()
+        normalized_profit_mode = self._normalize_profit_mode(profit_mode)
         normalized_ota_cost_mode = (ota_cost_mode or "company_only").strip()
         normalized_expense_mode = (expense_mode or "rule_based").strip()
         normalized_notes = (notes or "").strip() or None
@@ -593,5 +593,14 @@ class ContractService:
 
     def _attach_apartments_to_profiles(self, profiles: list[dict]) -> list[dict]:
         for profile in profiles:
+            profile["profit_mode"] = self._normalize_profit_mode(
+                profile.get("profit_mode")
+            )
             profile["apartments"] = self.contract_repo.get_apartments_by_profile_id(profile["id"])
         return profiles
+
+    def _normalize_profit_mode(self, profit_mode: str | None) -> str:
+        normalized_profit_mode = (profit_mode or "gross_split").strip()
+        if normalized_profit_mode == "net_profit_split":
+            return "net_split"
+        return normalized_profit_mode or "gross_split"

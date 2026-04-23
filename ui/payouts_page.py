@@ -2,6 +2,7 @@ import streamlit as st
 
 from services.booking_service import BookingService
 from services.finance_service import FinanceService
+from services.owner_payout_service import OwnerPayoutService
 from services.owner_service import OwnerService
 
 
@@ -9,7 +10,7 @@ PAYOUT_STATUS_LABELS = {
     "pending": "Ожидает выплаты",
     "partial": "Частично выплачен",
     "paid": "Выплачен",
-    "cancelled": "Отменён",
+    "cancelled": "Отменен",
 }
 
 
@@ -50,57 +51,16 @@ def _parse_money_input(value: str, field_name: str, allow_zero: bool = True) -> 
     return amount
 
 
-def _get_apartment_for_booking(conn, booking_id: int) -> dict | None:
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        SELECT a.*
-        FROM apartments a
-        JOIN bookings b ON b.apartment_id = a.id
-        WHERE b.id = ?
-        LIMIT 1
-        """,
-        (booking_id,),
-    )
-    row = cursor.fetchone()
-    return dict(row) if row else None
-
-
-def _get_all_owner_payouts(conn) -> list[dict]:
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        SELECT *
-        FROM owner_payouts
-        ORDER BY id DESC
-        """
-    )
-    rows = cursor.fetchall()
-    return [dict(row) for row in rows]
-
-
-def _get_booking_total_paid(conn, booking_id: int) -> float:
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        SELECT COALESCE(SUM(amount_paid_gel), 0) AS total
-        FROM owner_payouts
-        WHERE booking_id = ?
-          AND status IN ('partial', 'paid')
-        """,
-        (booking_id,),
-    )
-    row = cursor.fetchone()
-    return float(dict(row).get("total") or 0.0) if row else 0.0
-
-
 def render_payouts_page(conn):
     booking_service = BookingService(conn)
     finance_service = FinanceService(conn)
     owner_service = OwnerService(conn)
+    owner_payout_service = OwnerPayoutService(conn)
 
     st.subheader("Выплаты собственникам")
-    st.caption("Здесь видно, сколько начислено по броням, сколько уже выплачено и какой остаток долга.")
+    st.caption(
+        "Здесь видно, сколько начислено по броням, сколько уже выплачено и какой остаток долга."
+    )
 
     try:
         bookings = booking_service.get_all_bookings()
@@ -111,9 +71,6 @@ def render_payouts_page(conn):
 
     owner_map = {owner["id"]: owner["name"] for owner in owners}
 
-    # ---------------------------------------------------------
-    # СВОДКА ПО БРОНЯМ
-    # ---------------------------------------------------------
     st.markdown("### Начисления и остатки по броням")
 
     rows = []
@@ -125,47 +82,68 @@ def render_payouts_page(conn):
                 persist_snapshot=False,
             )
 
-            apartment = _get_apartment_for_booking(conn, booking["id"])
+            apartment = booking_service.get_apartment_by_booking(booking["id"])
             owner_id = apartment.get("owner_id") if apartment else None
             owner_name = owner_map.get(owner_id, "-")
 
             owner_accrued = _safe_round(finance.get("owner_amount_due"))
-            owner_paid = _safe_round(_get_booking_total_paid(conn, booking["id"]))
+            owner_paid = _safe_round(
+                owner_payout_service.get_total_paid_by_booking_id(booking["id"])
+            )
             owner_balance = _safe_round(owner_accrued - owner_paid)
 
-            rows.append({
-                "Бронь": booking["id"],
-                "Гость": booking.get("guest_name") or "-",
-                "Собственник": owner_name,
-                "Сумма гостя": _safe_round(finance.get("guest_price")),
-                "Начислено собственнику": owner_accrued,
-                "Уже выплачено": owner_paid,
-                "Остаток долга": owner_balance,
-                "Стратегия": finance.get("strategy_type") or "-",
-            })
+            rows.append(
+                {
+                    "Бронь": booking["id"],
+                    "Гость": booking.get("guest_name") or "-",
+                    "Собственник": owner_name,
+                    "Сумма гостя": _safe_round(finance.get("guest_price")),
+                    "Начислено собственнику": owner_accrued,
+                    "Уже выплачено": owner_paid,
+                    "Остаток долга": owner_balance,
+                    "Стратегия": finance.get("strategy_type") or "-",
+                }
+            )
 
         except Exception as e:
-            rows.append({
-                "Бронь": booking["id"],
-                "Гость": booking.get("guest_name") or "-",
-                "Ошибка": str(e),
-            })
+            rows.append(
+                {
+                    "Бронь": booking["id"],
+                    "Гость": booking.get("guest_name") or "-",
+                    "Ошибка": str(e),
+                }
+            )
 
     if rows:
         st.dataframe(rows, use_container_width=True)
     else:
         st.info("Пока нет броней.")
 
-    # ---------------------------------------------------------
-    # ИТОГИ
-    # ---------------------------------------------------------
     st.markdown("---")
     st.markdown("### Краткие итоги")
 
     if rows:
-        total_accrued = _safe_round(sum(row.get("Начислено собственнику", 0) for row in rows if "Начислено собственнику" in row))
-        total_paid = _safe_round(sum(row.get("Уже выплачено", 0) for row in rows if "Уже выплачено" in row))
-        total_balance = _safe_round(sum(row.get("Остаток долга", 0) for row in rows if "Остаток долга" in row))
+        total_accrued = _safe_round(
+            sum(
+                row.get("Начислено собственнику", 0)
+                for row in rows
+                if "Начислено собственнику" in row
+            )
+        )
+        total_paid = _safe_round(
+            sum(
+                row.get("Уже выплачено", 0)
+                for row in rows
+                if "Уже выплачено" in row
+            )
+        )
+        total_balance = _safe_round(
+            sum(
+                row.get("Остаток долга", 0)
+                for row in rows
+                if "Остаток долга" in row
+            )
+        )
 
         c1, c2, c3 = st.columns(3)
         c1.metric("Всего начислено", total_accrued)
@@ -174,9 +152,6 @@ def render_payouts_page(conn):
     else:
         st.info("Пока нет данных для итогов.")
 
-    # ---------------------------------------------------------
-    # ДОБАВИТЬ ВЫПЛАТУ
-    # ---------------------------------------------------------
     st.markdown("---")
     st.markdown("### Зафиксировать выплату")
 
@@ -207,62 +182,10 @@ def render_payouts_page(conn):
                     allow_zero=False,
                 )
 
-                finance = finance_service.calculate_booking_finances(
-                    booking_id,
-                    persist_snapshot=False,
+                owner_payout_service.create_manual_payout(
+                    booking_id=booking_id,
+                    amount_paid_gel=payout_amount,
                 )
-
-                apartment = _get_apartment_for_booking(conn, booking_id)
-                if not apartment:
-                    raise ValueError("Не найдена квартира для этой брони.")
-
-                owner_id = apartment.get("owner_id")
-                if not owner_id:
-                    raise ValueError("У квартиры не найден собственник.")
-
-                total_due = _safe_round(finance.get("owner_amount_due"))
-                already_paid = _safe_round(_get_booking_total_paid(conn, booking_id))
-                remaining_due = _safe_round(total_due - already_paid)
-
-                if remaining_due <= 0:
-                    raise ValueError("По этой брони больше нет долга перед собственником.")
-
-                if payout_amount > remaining_due:
-                    raise ValueError(
-                        f"Сумма выплаты больше остатка долга. Остаток: {remaining_due}"
-                    )
-
-                new_total_paid = already_paid + payout_amount
-
-                if new_total_paid >= total_due:
-                    payout_status = "paid"
-                else:
-                    payout_status = "partial"
-
-                cursor = conn.cursor()
-                cursor.execute(
-                    """
-                    INSERT INTO owner_payouts (
-                        owner_id,
-                        booking_id,
-                        amount_due_gel,
-                        amount_paid_gel,
-                        currency_code,
-                        fx_rate_to_gel,
-                        status,
-                        created_at
-                    )
-                    VALUES (?, ?, ?, ?, 'GEL', 1, ?, CURRENT_TIMESTAMP)
-                    """,
-                    (
-                        owner_id,
-                        booking_id,
-                        total_due,
-                        payout_amount,
-                        payout_status,
-                    ),
-                )
-                conn.commit()
 
                 st.success("Выплата сохранена.")
                 st.rerun()
@@ -270,13 +193,10 @@ def render_payouts_page(conn):
             except Exception as e:
                 st.error(f"Ошибка создания выплаты: {e}")
 
-    # ---------------------------------------------------------
-    # ВСЕ ВЫПЛАТЫ
-    # ---------------------------------------------------------
     st.markdown("---")
     st.markdown("### Все выплаты")
 
-    payout_rows_raw = _get_all_owner_payouts(conn)
+    payout_rows_raw = owner_payout_service.get_all_payouts()
 
     if payout_rows_raw:
         booking_map = {booking["id"]: booking for booking in bookings}
@@ -286,25 +206,29 @@ def render_payouts_page(conn):
             booking = booking_map.get(payout.get("booking_id"))
             owner_name = owner_map.get(payout.get("owner_id"), "-")
 
-            payout_rows.append({
-                "ID": payout.get("id"),
-                "Бронь": payout.get("booking_id"),
-                "Гость": booking.get("guest_name") if booking else "-",
-                "Собственник": owner_name,
-                "Начислено": _safe_round(payout.get("amount_due_gel") or payout.get("amount")),
-                "Выплачено": _safe_round(payout.get("amount_paid_gel")),
-                "Валюта": payout.get("currency_code") or "GEL",
-                "Статус": _label(payout.get("status"), PAYOUT_STATUS_LABELS),
-                "Создано": payout.get("created_at"),
-            })
+            payout_rows.append(
+                {
+                    "ID": payout.get("id"),
+                    "Бронь": payout.get("booking_id"),
+                    "Гость": booking.get("guest_name") if booking else "-",
+                    "Собственник": owner_name,
+                    "Начислено": _safe_round(
+                        payout.get("amount_due_gel") or payout.get("amount")
+                    ),
+                    "Выплачено": _safe_round(payout.get("amount_paid_gel")),
+                    "Валюта": payout.get("currency_code") or "GEL",
+                    "Статус": _label(
+                        payout.get("status"),
+                        PAYOUT_STATUS_LABELS,
+                    ),
+                    "Создано": payout.get("created_at"),
+                }
+            )
 
         st.dataframe(payout_rows, use_container_width=True)
     else:
         st.info("Пока нет выплат собственникам.")
 
-    # ---------------------------------------------------------
-    # ПРОВЕРКА ОДНОЙ БРОНИ
-    # ---------------------------------------------------------
     st.markdown("---")
     st.markdown("### Проверка одной брони")
 
@@ -321,12 +245,16 @@ def render_payouts_page(conn):
             persist_snapshot=False,
         )
 
-        apartment = _get_apartment_for_booking(conn, selected_check_booking_id)
+        apartment = booking_service.get_apartment_by_booking(selected_check_booking_id)
         owner_id = apartment.get("owner_id") if apartment else None
         owner_name = owner_map.get(owner_id, "-")
 
         total_due = _safe_round(finance.get("owner_amount_due"))
-        already_paid = _safe_round(_get_booking_total_paid(conn, selected_check_booking_id))
+        already_paid = _safe_round(
+            owner_payout_service.get_total_paid_by_booking_id(
+                selected_check_booking_id
+            )
+        )
         remaining_due = _safe_round(total_due - already_paid)
 
         c1, c2 = st.columns(2)

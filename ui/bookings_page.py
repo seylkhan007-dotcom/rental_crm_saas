@@ -25,6 +25,8 @@ OTA_MODE_LABELS = {
     "shared": "Делится",
 }
 
+BOOKINGS_PAGE_FLASH_MESSAGE_KEY = "bookings_page_flash_message"
+
 
 def _safe_round(value):
     try:
@@ -84,13 +86,22 @@ def _parse_money_input(value: str, field_name: str, allow_zero: bool = True) -> 
     return amount
 
 
+def _show_flash_message():
+    message = st.session_state.pop(BOOKINGS_PAGE_FLASH_MESSAGE_KEY, None)
+    if message:
+        st.success(message)
+
+
 def render_bookings_page(conn):
     booking_service = BookingService(conn)
     apartment_service = ApartmentService(conn)
     finance_service = FinanceService(conn)
 
     st.subheader("Бронирования и финансы")
-    st.caption("Быстро создаём бронь и сразу видим финансы, OTA и прибыль.")
+    st.caption(
+        "Быстро создаем бронь и сразу видим финансы, OTA и прибыль."
+    )
+    _show_flash_message()
 
     try:
         bookings = booking_service.get_all_bookings()
@@ -101,9 +112,6 @@ def render_bookings_page(conn):
 
     apartment_map = {apartment["id"]: apartment for apartment in apartments}
 
-    # ---------------------------------------------------------
-    # БЫСТРОЕ СОЗДАНИЕ БРОНИ
-    # ---------------------------------------------------------
     st.markdown("### Быстрое создание бронирования")
 
     if not apartments:
@@ -114,8 +122,11 @@ def render_bookings_page(conn):
             for apartment in apartments
         }
 
-        with st.form("quick_create_booking_form"):
-            selected_apartment = st.selectbox("Квартира", list(apartment_options.keys()))
+        with st.form("quick_create_booking_form", clear_on_submit=True):
+            selected_apartment = st.selectbox(
+                "Квартира",
+                list(apartment_options.keys()),
+            )
             guest_name = st.text_input("Имя гостя")
 
             today = date.today()
@@ -159,7 +170,7 @@ def render_bookings_page(conn):
                 )
 
             st.markdown("#### OTA")
-            c5, c6, c7, c8 = st.columns(4)
+            c5, c6, c7 = st.columns(3)
             with c5:
                 ota_account_name = st.text_input(
                     "OTA аккаунт",
@@ -178,12 +189,10 @@ def render_bookings_page(conn):
                     value="0",
                     placeholder="Например: 18",
                 )
-            with c8:
-                ota_cost_mode_snapshot = st.selectbox(
-                    "Кто платит OTA",
-                    list(OTA_MODE_LABELS.keys()),
-                    format_func=lambda x: OTA_MODE_LABELS[x],
-                )
+
+            st.caption(
+                "Кто несет OTA берется из активного договора квартиры и сохраняется в snapshot автоматически."
+            )
 
             submitted_create = st.form_submit_button("Создать бронирование")
 
@@ -193,7 +202,9 @@ def render_bookings_page(conn):
                         raise ValueError("Имя гостя обязательно.")
 
                     if check_out_date <= check_in_date:
-                        raise ValueError("Дата выезда должна быть позже даты заезда.")
+                        raise ValueError(
+                            "Дата выезда должна быть позже даты заезда."
+                        )
 
                     guest_price = _parse_money_input(
                         guest_price_text,
@@ -226,13 +237,20 @@ def render_bookings_page(conn):
                         check_out=_to_iso(check_out_date),
                         total_amount=guest_price,
                         guest_price=guest_price,
-                        settlement_base_amount=settlement_base_amount if settlement_base_amount > 0 else None,
+                        settlement_base_amount=(
+                            settlement_base_amount
+                            if settlement_base_amount > 0
+                            else None
+                        ),
                         source_channel=source_channel,
                         stay_type=stay_type,
-                        ota_account_name=ota_account_name.strip() if ota_account_name.strip() else None,
+                        ota_account_name=(
+                            ota_account_name.strip()
+                            if ota_account_name.strip()
+                            else None
+                        ),
                         ota_commission_pct=ota_commission_pct,
                         ota_vat_pct=ota_vat_pct,
-                        ota_cost_mode_snapshot=ota_cost_mode_snapshot,
                     )
 
                     finance_service.calculate_booking_finances(
@@ -240,15 +258,14 @@ def render_bookings_page(conn):
                         persist_snapshot=True,
                     )
 
-                    st.success(f"Бронирование создано. ID = {booking_id}")
+                    st.session_state[BOOKINGS_PAGE_FLASH_MESSAGE_KEY] = (
+                        f"Бронирование создано. ID = {booking_id}"
+                    )
                     st.rerun()
 
                 except Exception as e:
                     st.error(f"Ошибка создания бронирования: {e}")
 
-    # ---------------------------------------------------------
-    # СПИСОК БРОНИРОВАНИЙ
-    # ---------------------------------------------------------
     st.markdown("---")
     st.markdown("### Список бронирований")
 
@@ -263,51 +280,76 @@ def render_bookings_page(conn):
                 persist_snapshot=False,
             )
 
-            booking_rows.append({
-                "ID": booking["id"],
-                "Гость": booking.get("guest_name") or "-",
-                "Квартира": apartment["name"] if apartment else "-",
-                "Заезд": booking.get("check_in") or "-",
-                "Выезд": booking.get("check_out") or "-",
-                "Источник": _label(booking.get("source_channel"), SOURCE_CHANNEL_LABELS),
-                "Сумма гостя": _safe_round(finance.get("guest_price")),
-                "Settlement base": _safe_round(finance.get("settlement_base_amount")),
-                "OTA": _safe_round(finance.get("ota_total_amount")),
-                "OTA mode": _label(finance.get("ota_cost_mode"), OTA_MODE_LABELS),
-                "Выплата собственнику": _safe_round(finance.get("owner_amount_due")),
-                "Чистая прибыль компании": _safe_round(finance.get("distributable_profit_amount")),
-            })
+            booking_rows.append(
+                {
+                    "ID": booking["id"],
+                    "Гость": booking.get("guest_name") or "-",
+                    "Квартира": apartment["name"] if apartment else "-",
+                    "Заезд": booking.get("check_in") or "-",
+                    "Выезд": booking.get("check_out") or "-",
+                    "Источник": _label(
+                        booking.get("source_channel"),
+                        SOURCE_CHANNEL_LABELS,
+                    ),
+                    "Сумма гостя": _safe_round(finance.get("guest_price")),
+                    "Settlement base": _safe_round(
+                        finance.get("settlement_base_amount")
+                    ),
+                    "OTA": _safe_round(finance.get("ota_total_amount")),
+                    "OTA mode": _label(
+                        finance.get("ota_cost_mode"),
+                        OTA_MODE_LABELS,
+                    ),
+                    "Выплата собственнику": _safe_round(
+                        finance.get("owner_amount_due")
+                    ),
+                    "Чистая прибыль компании": _safe_round(
+                        finance.get("distributable_profit_amount")
+                    ),
+                }
+            )
         except Exception as e:
-            booking_rows.append({
-                "ID": booking["id"],
-                "Гость": booking.get("guest_name") or "-",
-                "Квартира": apartment["name"] if apartment else "-",
-                "Ошибка расчёта": str(e),
-            })
+            booking_rows.append(
+                {
+                    "ID": booking["id"],
+                    "Гость": booking.get("guest_name") or "-",
+                    "Квартира": apartment["name"] if apartment else "-",
+                    "Ошибка расчета": str(e),
+                }
+            )
 
     if booking_rows:
         st.dataframe(booking_rows, use_container_width=True)
     else:
         st.info("Пока нет бронирований.")
 
-    # ---------------------------------------------------------
-    # КРАТКИЕ ИТОГИ
-    # ---------------------------------------------------------
     st.markdown("---")
     st.markdown("### Краткие итоги")
 
     if booking_rows:
         total_guest_income = _safe_round(
-            sum(row.get("Сумма гостя", 0) for row in booking_rows if "Сумма гостя" in row)
+            sum(
+                row.get("Сумма гостя", 0)
+                for row in booking_rows
+                if "Сумма гостя" in row
+            )
         )
         total_ota = _safe_round(
             sum(row.get("OTA", 0) for row in booking_rows if "OTA" in row)
         )
         total_owner_payout = _safe_round(
-            sum(row.get("Выплата собственнику", 0) for row in booking_rows if "Выплата собственнику" in row)
+            sum(
+                row.get("Выплата собственнику", 0)
+                for row in booking_rows
+                if "Выплата собственнику" in row
+            )
         )
         total_company_profit = _safe_round(
-            sum(row.get("Чистая прибыль компании", 0) for row in booking_rows if "Чистая прибыль компании" in row)
+            sum(
+                row.get("Чистая прибыль компании", 0)
+                for row in booking_rows
+                if "Чистая прибыль компании" in row
+            )
         )
 
         c1, c2, c3, c4 = st.columns(4)
@@ -318,9 +360,6 @@ def render_bookings_page(conn):
     else:
         st.info("Пока нет данных для итогов.")
 
-    # ---------------------------------------------------------
-    # ДЕТАЛИ ОДНОЙ БРОНИ
-    # ---------------------------------------------------------
     st.markdown("---")
     st.markdown("### Детали бронирования")
 
@@ -339,39 +378,75 @@ def render_bookings_page(conn):
         try:
             booking = _get_booking_by_id(bookings, selected_booking_id)
             apartment = apartment_map.get(booking["apartment_id"]) if booking else None
-            finance = finance_service.get_booking_finance_breakdown(selected_booking_id)
+            finance = finance_service.get_booking_finance_breakdown(
+                selected_booking_id
+            )
 
             c1, c2 = st.columns(2)
             with c1:
                 st.metric("Сумма гостя", _safe_round(finance.get("guest_price")))
-                st.metric("Settlement base", _safe_round(finance.get("settlement_base_amount")))
-                st.metric("Extra margin", _safe_round(finance.get("extra_margin_amount")))
-                st.metric("Выплата собственнику", _safe_round(finance.get("owner_amount_due")))
+                st.metric(
+                    "Settlement base",
+                    _safe_round(finance.get("settlement_base_amount")),
+                )
+                st.metric(
+                    "Extra margin",
+                    _safe_round(finance.get("extra_margin_amount")),
+                )
+                st.metric(
+                    "Выплата собственнику",
+                    _safe_round(finance.get("owner_amount_due")),
+                )
 
             with c2:
-                st.metric("OTA комиссия", _safe_round(finance.get("ota_commission_amount")))
+                st.metric(
+                    "OTA комиссия",
+                    _safe_round(finance.get("ota_commission_amount")),
+                )
                 st.metric("OTA НДС", _safe_round(finance.get("ota_vat_amount")))
                 st.metric("OTA total", _safe_round(finance.get("ota_total_amount")))
-                st.metric("Чистая прибыль компании", _safe_round(finance.get("distributable_profit_amount")))
+                st.metric(
+                    "Чистая прибыль компании",
+                    _safe_round(finance.get("distributable_profit_amount")),
+                )
 
             st.markdown("#### Основная информация")
-            st.json({
-                "ID брони": selected_booking_id,
-                "Гость": booking.get("guest_name") if booking else "-",
-                "Квартира": apartment["name"] if apartment else "-",
-                "Дата заезда": booking.get("check_in") if booking else "-",
-                "Дата выезда": booking.get("check_out") if booking else "-",
-                "Источник": _label(booking.get("source_channel") if booking else None, SOURCE_CHANNEL_LABELS),
-                "Тип аренды": _label(booking.get("stay_type") if booking else None, STAY_TYPE_LABELS),
-                "OTA аккаунт": booking.get("ota_account_name") if booking else "-",
-                "OTA комиссия %": booking.get("ota_commission_pct") if booking else 0,
-                "OTA VAT %": booking.get("ota_vat_pct") if booking else 0,
-                "OTA mode": _label(finance.get("ota_cost_mode"), OTA_MODE_LABELS),
-                "OTA owner burden": _safe_round(finance.get("ota_owner_amount")),
-                "OTA company burden": _safe_round(finance.get("ota_company_amount")),
-                "OTA shared amount": _safe_round(finance.get("ota_shared_amount")),
-                "Стратегия расчёта": finance.get("strategy_type") or "-",
-            })
+            st.json(
+                {
+                    "ID брони": selected_booking_id,
+                    "Гость": booking.get("guest_name") if booking else "-",
+                    "Квартира": apartment["name"] if apartment else "-",
+                    "Дата заезда": booking.get("check_in") if booking else "-",
+                    "Дата выезда": booking.get("check_out") if booking else "-",
+                    "Источник": _label(
+                        booking.get("source_channel") if booking else None,
+                        SOURCE_CHANNEL_LABELS,
+                    ),
+                    "Тип аренды": _label(
+                        booking.get("stay_type") if booking else None,
+                        STAY_TYPE_LABELS,
+                    ),
+                    "OTA аккаунт": booking.get("ota_account_name") if booking else "-",
+                    "OTA комиссия %": booking.get("ota_commission_pct")
+                    if booking
+                    else 0,
+                    "OTA VAT %": booking.get("ota_vat_pct") if booking else 0,
+                    "OTA mode": _label(
+                        finance.get("ota_cost_mode"),
+                        OTA_MODE_LABELS,
+                    ),
+                    "OTA owner burden": _safe_round(
+                        finance.get("ota_owner_amount")
+                    ),
+                    "OTA company burden": _safe_round(
+                        finance.get("ota_company_amount")
+                    ),
+                    "OTA shared amount": _safe_round(
+                        finance.get("ota_shared_amount")
+                    ),
+                    "Стратегия расчета": finance.get("strategy_type") or "-",
+                }
+            )
 
             st.markdown("#### Финансовый breakdown")
             st.json(finance)

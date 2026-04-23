@@ -387,7 +387,7 @@ class BookingService:
         return {
             "pricing_model": pricing_model,
             "settlement_base_mode": (contract.get("settlement_base_mode") or "from_guest_price").strip(),
-            "profit_mode": (contract.get("profit_mode") or "gross_split").strip(),
+            "profit_mode": self._normalize_profit_mode(contract.get("profit_mode")),
             "owner_percent": float(contract.get("owner_percent") or 0),
             "company_percent": float(contract.get("company_percent") or 0),
             "fixed_rent_type": (contract.get("fixed_rent_type") or "").strip() or None,
@@ -396,3 +396,9 @@ class BookingService:
             "ota_cost_mode": (contract.get("ota_cost_mode") or "company_only").strip(),
             "expense_mode": (contract.get("expense_mode") or "rule_based").strip(),
         }
+
+    def _normalize_profit_mode(self, profit_mode: str | None) -> str:
+        normalized_profit_mode = (profit_mode or "gross_split").strip()
+        if normalized_profit_mode == "net_profit_split":
+            return "net_split"
+        return normalized_profit_mode or "gross_split"

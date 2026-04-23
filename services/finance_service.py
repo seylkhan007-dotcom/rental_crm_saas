@@ -191,9 +191,8 @@ class FinanceService:
             booking.get("pricing_model") or contract.get("pricing_model"),
             "management",
         )
-        profit_mode = self._str_or_default(
-            booking.get("profit_mode_snapshot") or contract.get("profit_mode"),
-            "gross_split",
+        profit_mode = self._normalize_profit_mode(
+            booking.get("profit_mode_snapshot") or contract.get("profit_mode")
         )
         stay_type = self._str_or_default(booking.get("stay_type"), "short_term")
 
@@ -950,7 +949,7 @@ class FinanceService:
 
     def _build_strategy_type_from_snapshot(self, snapshot: dict[str, Any]) -> str:
         pricing_model = self._str_or_default(snapshot.get("pricing_model_snapshot"), "management")
-        profit_mode = self._str_or_default(snapshot.get("profit_mode_snapshot"), "gross_split")
+        profit_mode = self._normalize_profit_mode(snapshot.get("profit_mode_snapshot"))
         fixed_rent_type = self._str_or_default(snapshot.get("fixed_rent_type_snapshot"), "")
 
         if pricing_model == "management":
@@ -1121,6 +1120,12 @@ class FinanceService:
     def _str_or_default(self, value: Any, default: str) -> str:
         text = str(value).strip() if value not in (None, "") else ""
         return text or default
+
+    def _normalize_profit_mode(self, value: Any) -> str:
+        normalized_profit_mode = self._str_or_default(value, "gross_split")
+        if normalized_profit_mode == "net_profit_split":
+            return "net_split"
+        return normalized_profit_mode
 
     def _round2(self, value: float) -> float:
         return round(float(value or 0.0), 2)

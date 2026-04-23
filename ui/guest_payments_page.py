@@ -2,14 +2,15 @@ import streamlit as st
 
 from services.booking_service import BookingService
 from services.finance_service import FinanceService
+from services.guest_payment_service import GuestPaymentService
 
 
 PAYMENT_STATUS_LABELS = {
     "pending": "Ожидает",
     "received": "Получен",
-    "approved": "Подтверждён",
+    "approved": "Подтвержден",
     "paid": "Оплачен",
-    "cancelled": "Отменён",
+    "cancelled": "Отменен",
 }
 
 
@@ -50,40 +51,15 @@ def _parse_money_input(value: str, field_name: str, allow_zero: bool = True) -> 
     return amount
 
 
-def _get_all_guest_payments(conn) -> list[dict]:
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        SELECT *
-        FROM guest_payments
-        ORDER BY id DESC
-        """
-    )
-    rows = cursor.fetchall()
-    return [dict(row) for row in rows]
-
-
-def _get_booking_total_received(conn, booking_id: int) -> float:
-    cursor = conn.cursor()
-    cursor.execute(
-        """
-        SELECT COALESCE(SUM(amount_gel), 0) AS total
-        FROM guest_payments
-        WHERE booking_id = ?
-          AND status IN ('received', 'approved', 'paid')
-        """,
-        (booking_id,),
-    )
-    row = cursor.fetchone()
-    return float(dict(row).get("total") or 0.0) if row else 0.0
-
-
 def render_guest_payments_page(conn):
     booking_service = BookingService(conn)
     finance_service = FinanceService(conn)
+    guest_payment_service = GuestPaymentService(conn)
 
     st.subheader("Платежи гостей")
-    st.caption("Здесь фиксируются реальные оплаты гостей и считается остаток долга.")
+    st.caption(
+        "Здесь фиксируются реальные оплаты гостей и считается остаток долга."
+    )
 
     try:
         bookings = booking_service.get_all_bookings()
@@ -91,9 +67,6 @@ def render_guest_payments_page(conn):
         st.error(f"Ошибка загрузки бронирований: {e}")
         return
 
-    # ---------------------------------------------------------
-    # СВОДКА ПО БРОНЯМ
-    # ---------------------------------------------------------
     st.markdown("### Начисления и оплаты по броням")
 
     rows = []
@@ -106,41 +79,50 @@ def render_guest_payments_page(conn):
             )
 
             guest_due = _safe_round(finance.get("guest_price"))
-            guest_paid = _safe_round(_get_booking_total_received(conn, booking["id"]))
+            guest_paid = _safe_round(
+                guest_payment_service.get_total_received_by_booking_id(booking["id"])
+            )
             guest_balance = _safe_round(guest_due - guest_paid)
 
-            rows.append({
-                "Бронь": booking["id"],
-                "Гость": booking.get("guest_name") or "-",
-                "Начислено": guest_due,
-                "Оплачено": guest_paid,
-                "Остаток": guest_balance,
-                "Источник": booking.get("source_channel") or "-",
-                "Тип аренды": booking.get("stay_type") or "-",
-            })
+            rows.append(
+                {
+                    "Бронь": booking["id"],
+                    "Гость": booking.get("guest_name") or "-",
+                    "Начислено": guest_due,
+                    "Оплачено": guest_paid,
+                    "Остаток": guest_balance,
+                    "Источник": booking.get("source_channel") or "-",
+                    "Тип аренды": booking.get("stay_type") or "-",
+                }
+            )
 
         except Exception as e:
-            rows.append({
-                "Бронь": booking["id"],
-                "Гость": booking.get("guest_name") or "-",
-                "Ошибка": str(e),
-            })
+            rows.append(
+                {
+                    "Бронь": booking["id"],
+                    "Гость": booking.get("guest_name") or "-",
+                    "Ошибка": str(e),
+                }
+            )
 
     if rows:
         st.dataframe(rows, use_container_width=True)
     else:
         st.info("Пока нет броней.")
 
-    # ---------------------------------------------------------
-    # ИТОГИ
-    # ---------------------------------------------------------
     st.markdown("---")
     st.markdown("### Краткие итоги")
 
     if rows:
-        total_due = _safe_round(sum(row.get("Начислено", 0) for row in rows if "Начислено" in row))
-        total_paid = _safe_round(sum(row.get("Оплачено", 0) for row in rows if "Оплачено" in row))
-        total_balance = _safe_round(sum(row.get("Остаток", 0) for row in rows if "Остаток" in row))
+        total_due = _safe_round(
+            sum(row.get("Начислено", 0) for row in rows if "Начислено" in row)
+        )
+        total_paid = _safe_round(
+            sum(row.get("Оплачено", 0) for row in rows if "Оплачено" in row)
+        )
+        total_balance = _safe_round(
+            sum(row.get("Остаток", 0) for row in rows if "Остаток" in row)
+        )
 
         c1, c2, c3 = st.columns(3)
         c1.metric("Всего начислено", total_due)
@@ -149,11 +131,8 @@ def render_guest_payments_page(conn):
     else:
         st.info("Пока нет данных для итогов.")
 
-    # ---------------------------------------------------------
-    # ДОБАВИТЬ ПЛАТЁЖ
-    # ---------------------------------------------------------
     st.markdown("---")
-    st.markdown("### Добавить платёж")
+    st.markdown("### Добавить платеж")
 
     if not bookings:
         st.warning("Нет бронирований.")
@@ -188,90 +167,41 @@ def render_guest_payments_page(conn):
 
         notes = st.text_area("Комментарий", value="")
 
-        submitted = st.form_submit_button("Добавить платёж")
+        submitted = st.form_submit_button("Добавить платеж")
 
         if submitted:
             try:
                 booking_id = booking_options[selected_booking_label]
-
                 amount_original = _parse_money_input(
                     amount_text,
                     "Сумма платежа",
                     allow_zero=False,
                 )
-
                 fx_rate_to_gel = _parse_money_input(
                     fx_rate_text,
                     "Курс к GEL",
                     allow_zero=False,
                 )
 
-                amount_gel = round(amount_original * fx_rate_to_gel, 2)
-
-                finance = finance_service.calculate_booking_finances(
-                    booking_id,
-                    persist_snapshot=False,
-                )
-
-                total_due = _safe_round(finance.get("guest_price"))
-                already_paid = _safe_round(_get_booking_total_received(conn, booking_id))
-                remaining_due = _safe_round(total_due - already_paid)
-
-                if remaining_due <= 0:
-                    raise ValueError("По этой брони больше нет долга гостя.")
-
-                if amount_gel > remaining_due:
-                    raise ValueError(
-                        f"Сумма платежа больше остатка долга. Остаток: {remaining_due}"
-                    )
-
-                cursor = conn.cursor()
-                cursor.execute(
-                    """
-                    INSERT INTO guest_payments (
-                        booking_id,
-                        payment_date,
-                        payment_method,
-                        amount_original,
-                        currency_code,
-                        fx_rate_to_gel,
-                        amount_gel,
-                        status,
-                        notes,
-                        created_at
-                    )
-                    VALUES (?, DATE('now'), ?, ?, ?, ?, ?, 'received', ?, CURRENT_TIMESTAMP)
-                    """,
-                    (
-                        booking_id,
-                        payment_method,
-                        amount_original,
-                        currency_code,
-                        fx_rate_to_gel,
-                        amount_gel,
-                        notes.strip() if notes.strip() else None,
-                    ),
-                )
-                conn.commit()
-
-                finance_service.calculate_booking_finances(
+                guest_payment_service.create_payment(
                     booking_id=booking_id,
-                    persist_snapshot=True,
+                    amount_original=amount_original,
+                    currency_code=currency_code,
+                    fx_rate_to_gel=fx_rate_to_gel,
+                    payment_method=payment_method,
+                    notes=notes,
                 )
 
-                st.success("Платёж добавлен.")
+                st.success("Платеж добавлен.")
                 st.rerun()
 
             except Exception as e:
                 st.error(f"Ошибка добавления платежа: {e}")
 
-    # ---------------------------------------------------------
-    # ВСЕ ПЛАТЕЖИ
-    # ---------------------------------------------------------
     st.markdown("---")
     st.markdown("### Все платежи гостей")
 
-    payment_rows_raw = _get_all_guest_payments(conn)
+    payment_rows_raw = guest_payment_service.get_all_guest_payments()
 
     if payment_rows_raw:
         booking_map = {booking["id"]: booking for booking in bookings}
@@ -280,27 +210,29 @@ def render_guest_payments_page(conn):
         for payment in payment_rows_raw:
             booking = booking_map.get(payment.get("booking_id"))
 
-            payment_rows.append({
-                "ID": payment.get("id"),
-                "Бронь": payment.get("booking_id"),
-                "Гость": booking.get("guest_name") if booking else "-",
-                "Сумма": _safe_round(payment.get("amount_original")),
-                "Валюта": payment.get("currency_code") or "GEL",
-                "Курс": _safe_round(payment.get("fx_rate_to_gel")),
-                "Сумма в GEL": _safe_round(payment.get("amount_gel")),
-                "Метод": payment.get("payment_method") or "-",
-                "Статус": _label(payment.get("status"), PAYMENT_STATUS_LABELS),
-                "Комментарий": payment.get("notes") or "",
-                "Создано": payment.get("created_at"),
-            })
+            payment_rows.append(
+                {
+                    "ID": payment.get("id"),
+                    "Бронь": payment.get("booking_id"),
+                    "Гость": booking.get("guest_name") if booking else "-",
+                    "Сумма": _safe_round(payment.get("amount_original")),
+                    "Валюта": payment.get("currency_code") or "GEL",
+                    "Курс": _safe_round(payment.get("fx_rate_to_gel")),
+                    "Сумма в GEL": _safe_round(payment.get("amount_gel")),
+                    "Метод": payment.get("payment_method") or "-",
+                    "Статус": _label(
+                        payment.get("status"),
+                        PAYMENT_STATUS_LABELS,
+                    ),
+                    "Комментарий": payment.get("notes") or "",
+                    "Создано": payment.get("created_at"),
+                }
+            )
 
         st.dataframe(payment_rows, use_container_width=True)
     else:
         st.info("Пока нет платежей гостей.")
 
-    # ---------------------------------------------------------
-    # ПРОВЕРКА ОДНОЙ БРОНИ
-    # ---------------------------------------------------------
     st.markdown("---")
     st.markdown("### Проверка одной брони")
 
@@ -318,7 +250,11 @@ def render_guest_payments_page(conn):
         )
 
         total_due = _safe_round(finance.get("guest_price"))
-        already_paid = _safe_round(_get_booking_total_received(conn, selected_check_booking_id))
+        already_paid = _safe_round(
+            guest_payment_service.get_total_received_by_booking_id(
+                selected_check_booking_id
+            )
+        )
         remaining_due = _safe_round(total_due - already_paid)
 
         c1, c2 = st.columns(2)
@@ -327,7 +263,12 @@ def render_guest_payments_page(conn):
             st.metric("Уже оплачено", already_paid)
         with c2:
             st.metric("Остаток долга", remaining_due)
-            st.metric("Источник", (finance.get("source_channel") or "-") if isinstance(finance, dict) else "-")
+            st.metric(
+                "Источник",
+                (finance.get("source_channel") or "-")
+                if isinstance(finance, dict)
+                else "-",
+            )
 
         st.markdown("#### Финансовый breakdown")
         st.json(finance)
