@@ -1,6 +1,8 @@
 import streamlit as st
+from datetime import datetime, timedelta
 
 from services.lead_service import LeadService
+from services.booking_service import BookingService
 from repositories.apartment_repository import ApartmentRepository
 
 
@@ -8,6 +10,7 @@ def render_leads_page(conn):
     """Страница управления лидами (потенциальные клиенты)."""
 
     lead_service = LeadService(conn)
+    booking_service = BookingService(conn)
     apartment_repo = ApartmentRepository(conn)
 
     st.subheader("Лиды")
@@ -20,6 +23,10 @@ def render_leads_page(conn):
         st.session_state.lead_flash_type = None
     if "edit_success_flag" not in st.session_state:
         st.session_state.edit_success_flag = False
+    if "conversion_is_submitting" not in st.session_state:
+        st.session_state.conversion_is_submitting = False
+    if "conversion_success_flag" not in st.session_state:
+        st.session_state.conversion_success_flag = False
 
     # Display flash message if exists
     if st.session_state.lead_flash_message:
@@ -237,6 +244,157 @@ def render_leads_page(conn):
                 except Exception as e:
                     st.session_state.lead_flash_message = f"❌ Ошибка редактирования лида: {e}"
                     st.session_state.lead_flash_type = "error"
+                    st.rerun()
+
+    st.markdown("---")
+
+    # ---------------------------------------------------------
+    # ПРЕОБРАЗОВАТЬ ЛИДА В БРОНЬ
+    # ---------------------------------------------------------
+    if leads:
+        st.markdown("### Создать бронь из лида")
+
+        # Reset conversion form after successful booking
+        if st.session_state.conversion_success_flag:
+            st.session_state.conversion_success_flag = False
+            st.session_state.conversion_is_submitting = False
+
+        conversion_lead_options = {
+            f"{lead['id']} - {lead['name']} ({lead.get('phone', '-')})": lead["id"]
+            for lead in leads
+        }
+
+        with st.form("convert_lead_to_booking_form", clear_on_submit=True):
+            selected_conversion_lead_key = st.selectbox(
+                "Выбери лида для преобразования в бронь",
+                list(conversion_lead_options.keys()),
+                key="conversion_select",
+            )
+            selected_conversion_lead_id = conversion_lead_options[selected_conversion_lead_key]
+            selected_conversion_lead = next(
+                l for l in leads if l["id"] == selected_conversion_lead_id
+            )
+
+            # Display lead details
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.text_input(
+                    "Имя гостя",
+                    value=selected_conversion_lead.get("name", ""),
+                    disabled=True,
+                    key="conversion_guest_name_display",
+                )
+            with col2:
+                st.text_input(
+                    "Телефон",
+                    value=selected_conversion_lead.get("phone", ""),
+                    disabled=True,
+                    key="conversion_phone_display",
+                )
+            with col3:
+                apt_id = selected_conversion_lead.get("apartment_id")
+                apt_name = "-"
+                if apt_id:
+                    apt = next((a for a in apartments if a.get("id") == apt_id), None)
+                    if apt:
+                        apt_name = apt.get("name", "-")
+                st.text_input(
+                    "Квартира",
+                    value=apt_name,
+                    disabled=True,
+                    key="conversion_apartment_display",
+                )
+
+            st.markdown("#### Данные бронирования")
+
+            # Conversion form fields
+            col_check_in, col_check_out = st.columns(2)
+            with col_check_in:
+                check_in_date = st.date_input(
+                    "Дата заезда *",
+                    value=datetime.today(),
+                    key="conversion_check_in",
+                )
+            with col_check_out:
+                check_out_date = st.date_input(
+                    "Дата выезда *",
+                    value=datetime.today() + timedelta(days=1),
+                    key="conversion_check_out",
+                )
+
+            col_price, _ = st.columns(2)
+            with col_price:
+                price = st.number_input(
+                    "Цена (общая сумма) *",
+                    value=1000.0,
+                    min_value=1.0,
+                    step=100.0,
+                    key="conversion_price",
+                )
+
+            submitted_conversion = st.form_submit_button(
+                "✅ Создать бронь",
+                use_container_width=True,
+                disabled=st.session_state.conversion_is_submitting,
+            )
+
+            if submitted_conversion:
+                try:
+                    # Prevent double submission
+                    if st.session_state.conversion_is_submitting:
+                        st.warning("Пожалуйста, подождите. Бронь создаётся...")
+                    else:
+                        st.session_state.conversion_is_submitting = True
+
+                        # Validate apartment selection
+                        apartment_id = selected_conversion_lead.get("apartment_id")
+                        if not apartment_id:
+                            raise ValueError(
+                                "У лида не выбрана квартира. "
+                                "Пожалуйста, выберите квартиру в профиле лида перед преобразованием."
+                            )
+
+                        # Validate dates
+                        if check_in_date >= check_out_date:
+                            raise ValueError(
+                                "Дата заезда должна быть раньше даты выезда."
+                            )
+
+                        # Validate price
+                        if price <= 0:
+                            raise ValueError("Цена должна быть больше нуля.")
+
+                        # Format dates as ISO strings
+                        check_in_str = check_in_date.isoformat()
+                        check_out_str = check_out_date.isoformat()
+                        guest_name = selected_conversion_lead.get("name", "").strip()
+
+                        # Create booking
+                        booking_id = booking_service.create_booking(
+                            apartment_id=apartment_id,
+                            guest_name=guest_name,
+                            check_in=check_in_str,
+                            check_out=check_out_str,
+                            total_amount=price,
+                            source_channel="direct",
+                        )
+
+                        st.session_state.lead_flash_message = (
+                            f"✅ Бронь #{booking_id} создана успешно из лида '{guest_name}'!"
+                        )
+                        st.session_state.lead_flash_type = "success"
+                        st.session_state.conversion_success_flag = True
+                        st.rerun()
+
+                except ValueError as e:
+                    st.session_state.lead_flash_message = f"❌ Ошибка: {e}"
+                    st.session_state.lead_flash_type = "error"
+                    st.session_state.conversion_is_submitting = False
+                    st.rerun()
+                except Exception as e:
+                    st.session_state.lead_flash_message = f"❌ Ошибка создания бронирования: {e}"
+                    st.session_state.lead_flash_type = "error"
+                    st.session_state.conversion_is_submitting = False
                     st.rerun()
 
     st.markdown("---")
