@@ -41,29 +41,81 @@ st.subheader("Квартиры, контракты, бронирования, ф
 conn = get_connection()
 create_all(conn)
 
-page = st.sidebar.radio(
-    "Разделы",
-    [
+# =========================================================================
+# SIDEBAR NAVIGATION
+# =========================================================================
+
+# Initialize navigation state
+if "current_page" not in st.session_state:
+    st.session_state.current_page = "Дашборд"
+
+if "_nav_prev_values" not in st.session_state:
+    st.session_state._nav_prev_values = {}
+
+# Define navigation structure
+nav_structure = {
+    "Главное": [
         "Дашборд",
-        "Отчёты и аналитика",
         "Календарь бронирований",
-        "Собственники",
-        "Отчёт по собственнику",
-        "Комплексы",
-        "Квартиры",
-        "Сотрудники и участники",
+    ],
+    "Продажи": [
         "Лиды",
-        "Контракты",
         "Бронирования и финансы",
-        "Расходы",
-        "Выплаты",
-        "Платежи гостей",
+    ],
+    "Операции": [
+        "Квартиры",
         "Задачи",
     ],
-)
+    "Финансы": [
+        "Расходы",
+        "Платежи гостей",
+        "Выплаты",
+        "Отчёты и аналитика",
+        "Отчёт по собственнику",
+    ],
+    "Настройки": [
+        "Собственники",
+        "Комплексы",
+        "Сотрудники и участники",
+        "Контракты",
+    ],
+}
+
+# Render sidebar navigation with grouped sections
+for section_name, pages in nav_structure.items():
+    st.sidebar.markdown(f"#### {section_name}")
+    
+    # Determine default index: highlight current page if it's in this section
+    if st.session_state.current_page in pages:
+        default_index = pages.index(st.session_state.current_page)
+    else:
+        default_index = 0
+    
+    # Render selectbox for this section
+    selected = st.sidebar.selectbox(
+        f"Выбери из {section_name}",
+        pages,
+        index=default_index,
+        key=f"nav_{section_name}",
+        label_visibility="collapsed",
+    )
+    
+    # Detect if this section's value changed from previous render
+    prev_value = st.session_state._nav_prev_values.get(section_name)
+    st.session_state._nav_prev_values[section_name] = selected
+    
+    # If value changed, update current page
+    if prev_value is not None and selected != prev_value:
+        st.session_state.current_page = selected
 
 st.sidebar.markdown("---")
 st.sidebar.caption("Архитектура: UI → Service → Repository → DB")
+
+page = st.session_state.current_page
+
+# =========================================================================
+# PAGE ROUTING
+# =========================================================================
 
 if page == "Дашборд":
     render_dashboard_page(conn)
