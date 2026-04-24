@@ -1,6 +1,8 @@
 import streamlit as st
+from datetime import datetime
 
 from services.task_service import TaskService
+from services.booking_service import BookingService
 from repositories.apartment_repository import ApartmentRepository
 from repositories.booking_repository import BookingRepository
 
@@ -26,6 +28,7 @@ def render_tasks_page(conn):
     """Страница задач."""
 
     task_service = TaskService(conn)
+    booking_service = BookingService(conn)
     apartment_repo = ApartmentRepository(conn)
     booking_repo = BookingRepository(conn)
 
@@ -43,6 +46,55 @@ def render_tasks_page(conn):
         return
 
     apartment_map = {apt["id"]: apt["name"] for apt in apartments}
+
+    # ---------------------------------------------------------
+    # СОЗДАНИЕ ЗАДАЧ ПО ВЫЕЗДАМ
+    # ---------------------------------------------------------
+    st.markdown("### Создать задачи на сегодня (выезды)")
+
+    col1, col2 = st.columns([3, 1])
+    with col2:
+        if st.button("Создать задачи по выездам", key="generate_checkout_tasks"):
+            try:
+                # Get today's date in YYYY-MM-DD format
+                today = datetime.now().strftime("%Y-%m-%d")
+
+                # Get all bookings checking out today
+                checkout_bookings = booking_service.get_bookings_by_date_range(today, today)
+
+                # Get all existing tasks to check for duplicates
+                all_tasks = task_service.list_tasks()
+                existing_booking_ids = {task["booking_id"] for task in all_tasks if task["booking_id"]}
+
+                tasks_created = 0
+
+                # Create cleaning tasks for each checkout booking
+                for booking in checkout_bookings:
+                    booking_id = booking["id"]
+
+                    # Prevent duplicates: skip if task already exists for this booking
+                    if booking_id in existing_booking_ids:
+                        continue
+
+                    apartment_id = booking["apartment_id"]
+
+                    # Create cleaning task
+                    task_service.create_cleaning_task(
+                        apartment_id=apartment_id,
+                        booking_id=booking_id,
+                    )
+                    tasks_created += 1
+
+                if tasks_created > 0:
+                    st.success(f"Создано {tasks_created} задач")
+                    st.rerun()
+                else:
+                    st.info("Нет новых бронирований на выезд, или все уже имеют задачи.")
+
+            except Exception as e:
+                st.error(f"Ошибка при создании задач: {e}")
+
+    st.markdown("---")
 
     # ---------------------------------------------------------
     # СПИСОК ЗАДАЧ
