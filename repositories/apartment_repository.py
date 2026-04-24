@@ -78,6 +78,18 @@ class ApartmentRepository(BaseRepository):
         rows = self.cursor.fetchall()
         return [dict(row) for row in rows]
 
+    def update(self, apartment_id: int, name: str, owner_id: int, complex_id: int | None = None) -> None:
+        """Обновить квартиру."""
+        self.cursor.execute(
+            """
+            UPDATE apartments
+            SET name = ?, owner_id = ?, complex_id = ?
+            WHERE id = ?
+            """,
+            (name, owner_id, complex_id, apartment_id),
+        )
+        self.conn.commit()
+
     def delete(self, apartment_id: int) -> None:
         """Удалить квартиру по ID."""
         self.cursor.execute(
