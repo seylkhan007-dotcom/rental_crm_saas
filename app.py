@@ -17,6 +17,7 @@ from ui.bookings_page import render_bookings_page
 from ui.expenses_page import render_expenses_page
 from ui.payouts_page import render_payouts_page
 from ui.guest_payments_page import render_guest_payments_page
+from ui.tasks_page import render_tasks_page
 
 
 DB_PATH = "app.db"
@@ -57,6 +58,7 @@ page = st.sidebar.radio(
         "Расходы",
         "Выплаты",
         "Платежи гостей",
+        "Задачи",
     ],
 )
 
@@ -104,5 +106,8 @@ elif page == "Выплаты":
 
 elif page == "Платежи гостей":
     render_guest_payments_page(conn)
+
+elif page == "Задачи":
+    render_tasks_page(conn)
 
 conn.close()

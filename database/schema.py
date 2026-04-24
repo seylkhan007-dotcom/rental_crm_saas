@@ -130,6 +130,11 @@ def _create_indexes(conn) -> None:
     # Leads
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_leads_created_at ON leads(created_at);")
 
+    # Tasks
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_tasks_apartment_id ON tasks(apartment_id);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_tasks_booking_id ON tasks(booking_id);")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);")
+
     conn.commit()
 
 
@@ -334,6 +339,25 @@ def create_all(conn):
         FOREIGN KEY (checkin_actor_id) REFERENCES app_actors(id),
         FOREIGN KEY (manager_commission_actor_id) REFERENCES app_actors(id),
         FOREIGN KEY (finance_locked_by) REFERENCES app_actors(id)
+    );
+    """)
+
+    # ------------------------------------------------------------------
+    # TASKS
+    # ------------------------------------------------------------------
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        apartment_id INTEGER NOT NULL,
+        booking_id INTEGER,
+        task_type TEXT NOT NULL DEFAULT 'cleaning',
+        status TEXT NOT NULL DEFAULT 'new',
+        notes TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (apartment_id) REFERENCES apartments(id),
+        FOREIGN KEY (booking_id) REFERENCES bookings(id)
     );
     """)
 
