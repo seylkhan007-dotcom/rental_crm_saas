@@ -40,10 +40,23 @@ STAY_TYPE_LABELS = {
 }
 
 RESPONSIBILITY_MODE_LABELS = {
-    "company": "Компания",
-    "owner": "Собственник",
-    "guest": "Гость",
-    "split": "Разделить по долям",
+    "company": "Компания платит",
+    "owner": "Собственник платит",
+    "guest": "Гость платит",
+    "split": "Делится по процентам",
+}
+
+EXPENSE_TYPE_CODES = {
+    "service_fee": "Сервисные платежи",
+    "utilities": "Коммуналка",
+    "cleaning": "Уборка",
+    "laundry": "Стирка / химчистка",
+    "breakfast": "Завтраки",
+    "consumables": "Расходники",
+    "minor_repair": "Мелкий ремонт",
+    "major_repair": "Крупный ремонт",
+    "guest_damage": "Ущерб гостя",
+    "ota_commission": "Комиссия OTA",
 }
 
 FIXED_RENT_TYPE_LABELS = {
@@ -777,7 +790,13 @@ def render_contracts_page(conn):
                 key="expense_profile_select",
             )
 
-            expense_type_code = st.text_input("Тип расхода", value="cleaning")
+            expense_type_options = list(EXPENSE_TYPE_CODES.keys())
+            expense_type_code = st.selectbox(
+                "Тип расхода",
+                expense_type_options,
+                format_func=lambda x: EXPENSE_TYPE_CODES[x],
+                key="create_expense_type_select",
+            )
 
             responsibility_mode = st.selectbox(
                 "Кто несет расход",
@@ -785,29 +804,57 @@ def render_contracts_page(conn):
                 format_func=lambda x: RESPONSIBILITY_MODE_LABELS[x],
             )
 
-            owner_pct = st.number_input(
-                "Owner %",
-                min_value=0.0,
-                max_value=100.0,
-                value=0.0,
-                step=1.0,
-            )
-
-            company_pct = st.number_input(
-                "Company %",
-                min_value=0.0,
-                max_value=100.0,
-                value=100.0,
-                step=1.0,
-            )
-
-            guest_pct = st.number_input(
-                "Guest %",
-                min_value=0.0,
-                max_value=100.0,
-                value=0.0,
-                step=1.0,
-            )
+            # Conditional display of percentage fields based on responsibility_mode
+            if responsibility_mode == "split":
+                st.markdown("#### Разделение по процентам")
+                st.caption("Сумма всех процентов должна быть ровно 100%")
+                
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    owner_pct = st.number_input(
+                        "Собственник %",
+                        min_value=0.0,
+                        max_value=100.0,
+                        value=33.0,
+                        step=1.0,
+                        key="create_owner_pct_split",
+                    )
+                with col2:
+                    company_pct = st.number_input(
+                        "Компания %",
+                        min_value=0.0,
+                        max_value=100.0,
+                        value=34.0,
+                        step=1.0,
+                        key="create_company_pct_split",
+                    )
+                with col3:
+                    guest_pct = st.number_input(
+                        "Гость %",
+                        min_value=0.0,
+                        max_value=100.0,
+                        value=33.0,
+                        step=1.0,
+                        key="create_guest_pct_split",
+                    )
+                
+                total_pct = round(owner_pct + company_pct + guest_pct, 2)
+                if total_pct != 100.0:
+                    st.warning(f"⚠️ Сумма процентов = {total_pct}% (должна быть 100%)")
+            else:
+                # Auto-populate percentages for non-split modes
+                if responsibility_mode == "company":
+                    owner_pct = 0.0
+                    company_pct = 100.0
+                    guest_pct = 0.0
+                elif responsibility_mode == "owner":
+                    owner_pct = 100.0
+                    company_pct = 0.0
+                    guest_pct = 0.0
+                else:  # guest
+                    owner_pct = 0.0
+                    company_pct = 0.0
+                    guest_pct = 100.0
 
             expense_notes = st.text_input("Комментарий к правилу расхода")
             submitted_expense_rule = st.form_submit_button("Создать правило расхода")
@@ -835,7 +882,7 @@ def render_contracts_page(conn):
 
     if expense_rules and contract_profiles:
         expense_rule_options = {
-            f"{rule['id']} - {rule.get('profile_name')} - {rule.get('expense_type_code')}": rule["id"]
+            f"{rule['id']} - {rule.get('profile_name')} - {EXPENSE_TYPE_CODES.get(rule.get('expense_type_code'), rule.get('expense_type_code'))}": rule["id"]
             for rule in expense_rules
         }
 
@@ -864,6 +911,7 @@ def render_contracts_page(conn):
                     break
 
             responsibility_options = _build_options(RESPONSIBILITY_MODE_LABELS)
+            expense_type_options = list(EXPENSE_TYPE_CODES.keys())
 
             with st.form("edit_expense_rule_form"):
                 edit_expense_profile = st.selectbox(
@@ -876,10 +924,16 @@ def render_contracts_page(conn):
                     key="edit_expense_profile",
                 )
 
-                edit_expense_type_code = st.text_input(
+                edit_expense_type_code = st.selectbox(
                     "Тип расхода",
-                    value=selected_expense_rule.get("expense_type_code") or "",
-                    key="edit_expense_type_code",
+                    expense_type_options,
+                    index=_index_of(
+                        expense_type_options,
+                        selected_expense_rule.get("expense_type_code"),
+                        0,
+                    ),
+                    format_func=lambda x: EXPENSE_TYPE_CODES[x],
+                    key="edit_expense_type_select",
                 )
 
                 edit_responsibility_mode = st.selectbox(
@@ -894,32 +948,57 @@ def render_contracts_page(conn):
                     key="edit_responsibility_mode",
                 )
 
-                edit_owner_pct = st.number_input(
-                    "Owner %",
-                    min_value=0.0,
-                    max_value=100.0,
-                    value=float(selected_expense_rule.get("owner_pct") or 0),
-                    step=1.0,
-                    key="edit_owner_pct",
-                )
-
-                edit_company_pct = st.number_input(
-                    "Company %",
-                    min_value=0.0,
-                    max_value=100.0,
-                    value=float(selected_expense_rule.get("company_pct") or 0),
-                    step=1.0,
-                    key="edit_company_pct",
-                )
-
-                edit_guest_pct = st.number_input(
-                    "Guest %",
-                    min_value=0.0,
-                    max_value=100.0,
-                    value=float(selected_expense_rule.get("guest_pct") or 0),
-                    step=1.0,
-                    key="edit_guest_pct",
-                )
+                # Conditional display of percentage fields based on responsibility_mode
+                if edit_responsibility_mode == "split":
+                    st.markdown("#### Разделение по процентам")
+                    st.caption("Сумма всех процентов должна быть ровно 100%")
+                    
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        edit_owner_pct = st.number_input(
+                            "Собственник %",
+                            min_value=0.0,
+                            max_value=100.0,
+                            value=float(selected_expense_rule.get("owner_pct") or 0),
+                            step=1.0,
+                            key="edit_owner_pct_split",
+                        )
+                    with col2:
+                        edit_company_pct = st.number_input(
+                            "Компания %",
+                            min_value=0.0,
+                            max_value=100.0,
+                            value=float(selected_expense_rule.get("company_pct") or 0),
+                            step=1.0,
+                            key="edit_company_pct_split",
+                        )
+                    with col3:
+                        edit_guest_pct = st.number_input(
+                            "Гость %",
+                            min_value=0.0,
+                            max_value=100.0,
+                            value=float(selected_expense_rule.get("guest_pct") or 0),
+                            step=1.0,
+                            key="edit_guest_pct_split",
+                        )
+                    
+                    total_pct = round(edit_owner_pct + edit_company_pct + edit_guest_pct, 2)
+                    if total_pct != 100.0:
+                        st.warning(f"⚠️ Сумма процентов = {total_pct}% (должна быть 100%)")
+                else:
+                    # Auto-populate percentages for non-split modes
+                    if edit_responsibility_mode == "company":
+                        edit_owner_pct = 0.0
+                        edit_company_pct = 100.0
+                        edit_guest_pct = 0.0
+                    elif edit_responsibility_mode == "owner":
+                        edit_owner_pct = 100.0
+                        edit_company_pct = 0.0
+                        edit_guest_pct = 0.0
+                    else:  # guest
+                        edit_owner_pct = 0.0
+                        edit_company_pct = 0.0
+                        edit_guest_pct = 100.0
 
                 edit_expense_notes = st.text_input(
                     "Комментарий к правилу расхода",

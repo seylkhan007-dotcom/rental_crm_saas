@@ -15,6 +15,18 @@ class ContractService:
     ALLOWED_RESPONSIBILITY_MODES = {"company", "owner", "guest", "split"}
     ALLOWED_FIXED_RENT_TYPES = {"daily", "monthly"}
     ALLOWED_CURRENCIES = {"GEL", "USD", "EUR"}
+    ALLOWED_EXPENSE_TYPES = {
+        "service_fee",
+        "utilities",
+        "cleaning",
+        "laundry",
+        "breakfast",
+        "consumables",
+        "minor_repair",
+        "major_repair",
+        "guest_damage",
+        "ota_commission",
+    }
 
     def __init__(self, conn):
         self.contract_repo = ContractRepository(conn)
@@ -464,6 +476,9 @@ class ContractService:
         if not normalized_expense_type:
             raise ValueError("Тип расхода не может быть пустым.")
 
+        if normalized_expense_type not in self.ALLOWED_EXPENSE_TYPES:
+            raise ValueError("Некорректный тип расхода. Выбери один из предложенных вариантов.")
+
         if normalized_responsibility_mode not in self.ALLOWED_RESPONSIBILITY_MODES:
             raise ValueError("Некорректный режим ответственности за расход.")
 
@@ -474,6 +489,17 @@ class ContractService:
             total_percent = round(float(owner_pct) + float(company_pct) + float(guest_pct), 2)
             if total_percent != 100.0:
                 raise ValueError("При режиме split сумма процентов owner/company/guest должна быть ровно 100.")
+        else:
+            # For non-split modes, validate that exactly one party has 100%
+            if normalized_responsibility_mode == "company":
+                if company_pct != 100.0 or owner_pct != 0.0 or guest_pct != 0.0:
+                    raise ValueError("Для режима 'Компания платит' должны быть: компания=100%, остальные=0%.")
+            elif normalized_responsibility_mode == "owner":
+                if owner_pct != 100.0 or company_pct != 0.0 or guest_pct != 0.0:
+                    raise ValueError("Для режима 'Собственник платит' должны быть: собственник=100%, остальные=0%.")
+            elif normalized_responsibility_mode == "guest":
+                if guest_pct != 100.0 or owner_pct != 0.0 or company_pct != 0.0:
+                    raise ValueError("Для режима 'Гость платит' должны быть: гость=100%, остальные=0%.")
 
         existing_rule = self.contract_repo.get_expense_rule_by_profile_and_type(
             contract_profile_id,
@@ -534,6 +560,9 @@ class ContractService:
         if not normalized_expense_type:
             raise ValueError("Тип расхода не может быть пустым.")
 
+        if normalized_expense_type not in self.ALLOWED_EXPENSE_TYPES:
+            raise ValueError("Некорректный тип расхода. Выбери один из предложенных вариантов.")
+
         if normalized_responsibility_mode not in self.ALLOWED_RESPONSIBILITY_MODES:
             raise ValueError("Некорректный режим ответственности за расход.")
 
@@ -544,6 +573,17 @@ class ContractService:
             total_percent = round(float(owner_pct) + float(company_pct) + float(guest_pct), 2)
             if total_percent != 100.0:
                 raise ValueError("При режиме split сумма процентов owner/company/guest должна быть ровно 100.")
+        else:
+            # For non-split modes, validate that exactly one party has 100%
+            if normalized_responsibility_mode == "company":
+                if company_pct != 100.0 or owner_pct != 0.0 or guest_pct != 0.0:
+                    raise ValueError("Для режима 'Компания платит' должны быть: компания=100%, остальные=0%.")
+            elif normalized_responsibility_mode == "owner":
+                if owner_pct != 100.0 or company_pct != 0.0 or guest_pct != 0.0:
+                    raise ValueError("Для режима 'Собственник платит' должны быть: собственник=100%, остальные=0%.")
+            elif normalized_responsibility_mode == "guest":
+                if guest_pct != 100.0 or owner_pct != 0.0 or company_pct != 0.0:
+                    raise ValueError("Для режима 'Гость платит' должны быть: гость=100%, остальные=0%.")
 
         existing_rule = self.contract_repo.get_expense_rule_by_profile_and_type(
             contract_profile_id,
