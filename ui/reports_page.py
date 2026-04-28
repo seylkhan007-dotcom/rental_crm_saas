@@ -3,6 +3,9 @@ from datetime import date, timedelta
 import streamlit as st
 
 from services.report_service import ReportService
+from services.owner_service import OwnerService
+from services.apartment_service import ApartmentService
+from services.booking_service import BookingService
 
 
 def _safe_round(value):
@@ -125,3 +128,89 @@ def render_reports_page(conn):
         st.dataframe(booking_rows, use_container_width=True)
     else:
         st.info("Нет броней за этот период.")
+
+    # =========================================================================
+    # Owner Report (MVP)
+    # =========================================================================
+    st.markdown("---")
+    st.markdown("### Отчёт по собственнику (MVP)")
+
+    owner_service = OwnerService(conn)
+    apartment_service = ApartmentService(conn)
+    booking_service = BookingService(conn)
+
+    try:
+        all_owners = owner_service.get_all_owners()
+        all_apartments = apartment_service.get_all_apartments()
+        all_bookings = booking_service.get_all_bookings()
+
+        if all_owners:
+            owner_options = {
+                f"{owner['id']} - {owner['name']}": owner['id']
+                for owner in all_owners
+            }
+
+            selected_owner_label = st.selectbox(
+                "Выбери собственника",
+                list(owner_options.keys()),
+                key="owner_report_select",
+            )
+
+            selected_owner_id = owner_options[selected_owner_label]
+
+            # Filter apartments by owner
+            owner_apartments = [
+                apt for apt in all_apartments
+                if apt.get("owner_id") == selected_owner_id
+            ]
+
+            # Filter bookings by apartment ids
+            owner_apartment_ids = {apt["id"] for apt in owner_apartments}
+            owner_bookings = [
+                booking for booking in all_bookings
+                if booking.get("apartment_id") in owner_apartment_ids
+            ]
+
+            if owner_apartments:
+                # Show apartments with bookings
+                apt_rows = []
+                total_settlement_base = 0.0
+                booking_count = 0
+
+                for apt in owner_apartments:
+                    apt_bookings = [
+                        b for b in owner_bookings
+                        if b.get("apartment_id") == apt["id"]
+                    ]
+
+                    for booking in apt_bookings:
+                        settlement_base = _safe_round(booking.get("settlement_base_amount", 0))
+
+                        total_settlement_base += settlement_base
+                        booking_count += 1
+
+                        apt_rows.append({
+                            "Квартира": apt.get("name"),
+                            "Гость": booking.get("guest_name"),
+                            "Даты": f"{booking.get('check_in')} → {booking.get('check_out')}",
+                            "Цена для собственника": settlement_base,
+                        })
+
+                if apt_rows:
+                    st.dataframe(apt_rows, use_container_width=True)
+
+                    st.markdown("#### Итого")
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.metric("Общая база (settlement)", f"{total_settlement_base:.2f}")
+                    with c2:
+                        st.metric("Количество броней", booking_count)
+                else:
+                    st.info("Нет броней для этого собственника.")
+            else:
+                st.info("Нет квартир у этого собственника.")
+        else:
+            st.info("Нет собственников в системе.")
+
+    except Exception as e:
+        st.error(f"Ошибка построения отчёта по собственнику: {e}")
