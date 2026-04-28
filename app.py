@@ -49,64 +49,43 @@ create_all(conn)
 if "current_page" not in st.session_state:
     st.session_state.current_page = "Дашборд"
 
-if "_nav_prev_values" not in st.session_state:
-    st.session_state._nav_prev_values = {}
+# Menu options with visual grouping using emojis
+menu_options = [
+    ("🏠 Дашборд", "Дашборд"),
+    ("📅 Календарь бронирований", "Календарь бронирований"),
+    ("🎯 Лиды", "Лиды"),
+    ("💼 Бронирования и финансы", "Бронирования и финансы"),
+    ("🏢 Квартиры", "Квартиры"),
+    ("✅ Задачи", "Задачи"),
+    ("💰 Расходы", "Расходы"),
+    ("💳 Платежи гостей", "Платежи гостей"),
+    ("📤 Выплаты", "Выплаты"),
+    ("📊 Отчёты и аналитика", "Отчёты и аналитика"),
+    ("👤 Отчёт по собственнику", "Отчёт по собственнику"),
+    ("👥 Собственники", "Собственники"),
+    ("🏘️ Комплексы", "Комплексы"),
+    ("👨‍💼 Сотрудники и участники", "Сотрудники и участники"),
+    ("📝 Контракты", "Контракты"),
+]
 
-# Define navigation structure
-nav_structure = {
-    "Главное": [
-        "Дашборд",
-        "Календарь бронирований",
-    ],
-    "Продажи": [
-        "Лиды",
-        "Бронирования и финансы",
-    ],
-    "Операции": [
-        "Квартиры",
-        "Задачи",
-    ],
-    "Финансы": [
-        "Расходы",
-        "Платежи гостей",
-        "Выплаты",
-        "Отчёты и аналитика",
-        "Отчёт по собственнику",
-    ],
-    "Настройки": [
-        "Собственники",
-        "Комплексы",
-        "Сотрудники и участники",
-        "Контракты",
-    ],
-}
+display_names = [name for name, _ in menu_options]
+page_names = [page for _, page in menu_options]
 
-# Render sidebar navigation with grouped sections
-for section_name, pages in nav_structure.items():
-    st.sidebar.markdown(f"#### {section_name}")
-    
-    # Determine default index: highlight current page if it's in this section
-    if st.session_state.current_page in pages:
-        default_index = pages.index(st.session_state.current_page)
-    else:
-        default_index = 0
-    
-    # Render selectbox for this section
-    selected = st.sidebar.selectbox(
-        f"Выбери из {section_name}",
-        pages,
-        index=default_index,
-        key=f"nav_{section_name}",
-        label_visibility="collapsed",
-    )
-    
-    # Detect if this section's value changed from previous render
-    prev_value = st.session_state._nav_prev_values.get(section_name)
-    st.session_state._nav_prev_values[section_name] = selected
-    
-    # If value changed, update current page
-    if prev_value is not None and selected != prev_value:
-        st.session_state.current_page = selected
+# Find current index
+current_index = 0
+if st.session_state.current_page in page_names:
+    current_index = page_names.index(st.session_state.current_page)
+
+# Render single stable radio button for navigation
+selected_display = st.sidebar.radio(
+    "Навигация",
+    display_names,
+    index=current_index,
+    label_visibility="collapsed",
+)
+
+# Update current page based on selection
+st.session_state.current_page = page_names[display_names.index(selected_display)]
 
 st.sidebar.markdown("---")
 st.sidebar.caption("Архитектура: UI → Service → Repository → DB")
