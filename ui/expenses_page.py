@@ -117,7 +117,7 @@ def render_expenses_page(conn):
             actor_name = actor.get("display_name") or actor.get("full_name") or f"Actor {actor['id']}"
             actor_options[f"{actor['id']} - {actor_name}"] = actor["id"]
 
-        with st.form("quick_create_expense_form"):
+        with st.form("quick_create_expense_form", clear_on_submit=True):
             selected_booking_label = st.selectbox("Бронирование", list(booking_options.keys()))
             expense_type_code = st.selectbox(
                 "Тип расхода",
