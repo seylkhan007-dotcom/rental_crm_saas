@@ -201,6 +201,31 @@ def render_bookings_page(conn):
                 "Кто несет OTA берется из активного договора квартиры и сохраняется в snapshot автоматически."
             )
 
+            # Financial preview block
+            if guest_price_text.strip() and settlement_base_text.strip():
+                try:
+                    guest_price_preview = _parse_money_input(
+                        guest_price_text,
+                        "Сколько платит гость",
+                        allow_zero=False,
+                    )
+                    settlement_base_preview = _parse_money_input(
+                        settlement_base_text,
+                        "База для собственника",
+                        allow_zero=True,
+                    )
+                    
+                    extra_margin = guest_price_preview - settlement_base_preview
+                    
+                    st.markdown("#### Предварительный расчёт")
+                    st.info(
+                        f"**Цена гостя:** {guest_price_preview:.2f}\n\n"
+                        f"**Цена для собственника:** {settlement_base_preview:.2f}\n\n"
+                        f"**Маржа сверху:** {extra_margin:.2f}"
+                    )
+                except Exception:
+                    pass
+
             submitted_create = st.form_submit_button("Создать бронирование")
 
             if submitted_create:
