@@ -84,7 +84,7 @@ def render_actors_page(conn):
     # ---------------------------------------------------------
     st.markdown("### Создать сотрудника / участника")
 
-    with st.form("create_actor_form"):
+    with st.form("create_actor_form", clear_on_submit=True):
         full_name = st.text_input("Полное имя")
         display_name = st.text_input("Короткое имя")
 
