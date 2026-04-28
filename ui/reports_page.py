@@ -6,6 +6,7 @@ from services.report_service import ReportService
 from services.owner_service import OwnerService
 from services.apartment_service import ApartmentService
 from services.booking_service import BookingService
+from services.expense_service import ExpenseService
 
 
 def _safe_round(value):
@@ -138,6 +139,7 @@ def render_reports_page(conn):
     owner_service = OwnerService(conn)
     apartment_service = ApartmentService(conn)
     booking_service = BookingService(conn)
+    expense_service = ExpenseService(conn)
 
     try:
         all_owners = owner_service.get_all_owners()
@@ -175,6 +177,8 @@ def render_reports_page(conn):
                 # Show apartments with bookings
                 apt_rows = []
                 total_settlement_base = 0.0
+                total_expenses = 0.0
+                total_net_result = 0.0
                 booking_count = 0
 
                 for apt in owner_apartments:
@@ -185,8 +189,16 @@ def render_reports_page(conn):
 
                     for booking in apt_bookings:
                         settlement_base = _safe_round(booking.get("settlement_base_amount", 0))
+                        
+                        # Fetch expenses for this booking
+                        booking_expenses = expense_service.get_expenses_by_booking_id(booking.get("id"))
+                        booking_total_expenses = sum(_safe_round(e.get("amount", 0)) for e in booking_expenses)
+                        
+                        net_result = settlement_base - booking_total_expenses
 
                         total_settlement_base += settlement_base
+                        total_expenses += booking_total_expenses
+                        total_net_result += net_result
                         booking_count += 1
 
                         apt_rows.append({
@@ -194,16 +206,22 @@ def render_reports_page(conn):
                             "Гость": booking.get("guest_name"),
                             "Даты": f"{booking.get('check_in')} → {booking.get('check_out')}",
                             "Цена для собственника": settlement_base,
+                            "Расходы": booking_total_expenses,
+                            "Чистый результат": net_result,
                         })
 
                 if apt_rows:
                     st.dataframe(apt_rows, use_container_width=True)
 
                     st.markdown("#### Итого")
-                    c1, c2 = st.columns(2)
+                    c1, c2, c3, c4 = st.columns(4)
                     with c1:
                         st.metric("Общая база (settlement)", f"{total_settlement_base:.2f}")
                     with c2:
+                        st.metric("Общие расходы", f"{total_expenses:.2f}")
+                    with c3:
+                        st.metric("Чистый результат всего", f"{total_net_result:.2f}")
+                    with c4:
                         st.metric("Количество броней", booking_count)
                 else:
                     st.info("Нет броней для этого собственника.")
