@@ -123,6 +123,7 @@ def render_bookings_page(conn):
         }
 
         with st.form("quick_create_booking_form", clear_on_submit=True):
+            st.markdown("#### Основная информация")
             selected_apartment = st.selectbox(
                 "Квартира",
                 list(apartment_options.keys()),
@@ -130,29 +131,18 @@ def render_bookings_page(conn):
             guest_name = st.text_input("Имя гостя")
 
             today = date.today()
-            check_in_date = st.date_input(
-                "Дата заезда",
-                value=today,
-                format="YYYY-MM-DD",
-            )
-            check_out_date = st.date_input(
-                "Дата выезда",
-                value=today + timedelta(days=1),
-                format="YYYY-MM-DD",
-            )
-
             c1, c2 = st.columns(2)
             with c1:
-                guest_price_text = st.text_input(
-                    "Сколько платит гость",
-                    value="",
-                    placeholder="Например: 1000",
+                check_in_date = st.date_input(
+                    "Дата заезда",
+                    value=today,
+                    format="YYYY-MM-DD",
                 )
             with c2:
-                settlement_base_text = st.text_input(
-                    "Settlement base / база для собственника",
-                    value="",
-                    placeholder="Например: 700",
+                check_out_date = st.date_input(
+                    "Дата выезда",
+                    value=today + timedelta(days=1),
+                    format="YYYY-MM-DD",
                 )
 
             c3, c4 = st.columns(2)
@@ -169,7 +159,24 @@ def render_bookings_page(conn):
                     format_func=lambda x: SOURCE_CHANNEL_LABELS[x],
                 )
 
-            st.markdown("#### OTA")
+            st.markdown("#### Цена гостя")
+            guest_price_text = st.text_input(
+                "Сколько платит гость",
+                value="",
+                placeholder="Например: 1000",
+            )
+            st.caption("Фактическая цена, оплаченная гостем")
+
+            st.markdown("#### Цена для собственника")
+            settlement_base_text = st.text_input(
+                "База для собственника",
+                value="",
+                placeholder="Например: 700",
+            )
+            st.caption("Цена, которая показывается собственнику")
+
+            st.markdown("#### Дополнительно")
+            st.subheader("OTA", divider=False)
             c5, c6, c7 = st.columns(3)
             with c5:
                 ota_account_name = st.text_input(
