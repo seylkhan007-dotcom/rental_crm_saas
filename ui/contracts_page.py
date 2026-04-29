@@ -20,6 +20,11 @@ PROFIT_MODE_LABELS = {
     "net_split": "Сплит чистой прибыли",
 }
 
+CALCULATION_MODE_LABELS = {
+    "gross": "От оборота (gross)",
+    "net": "От чистой прибыли (net)",
+}
+
 OTA_COST_MODE_LABELS = {
     "company_only": "Компания платит OTA",
     "shared": "OTA делится",
