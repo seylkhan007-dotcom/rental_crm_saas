@@ -1,6 +1,7 @@
 import sqlite3
 import streamlit as st
 
+from config import DATABASE_PATH
 from database.schema import create_all
 
 from ui.dashboard_page import render_dashboard_page
@@ -20,11 +21,8 @@ from ui.guest_payments_page import render_guest_payments_page
 from ui.tasks_page import render_tasks_page
 
 
-DB_PATH = "app.db"
-
-
 def get_connection():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DATABASE_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
