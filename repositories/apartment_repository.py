@@ -29,9 +29,12 @@ class ApartmentRepository(BaseRepository):
         """Получить все квартиры."""
         self.cursor.execute(
             """
-            SELECT *
+            SELECT
+                apartments.*, 
+                complexes.name AS complex_name
             FROM apartments
-            ORDER BY id DESC
+            LEFT JOIN complexes ON apartments.complex_id = complexes.id
+            ORDER BY complex_name ASC, apartments.name ASC
             """
         )
         rows = self.cursor.fetchall()

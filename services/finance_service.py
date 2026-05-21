@@ -543,8 +543,9 @@ class FinanceService:
                 responsibility_mode=responsibility_mode
             )
 
-            owner_total += owner_share
-            company_total += company_share
+            if responsibility_mode != "split":
+                owner_total += owner_share
+                company_total += company_share
             guest_total += guest_share
 
             if application_stage == "pre_split":

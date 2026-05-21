@@ -99,6 +99,11 @@ class ContractService:
             raise ValueError("Фиксированная аренда не может быть отрицательной.")
 
         unique_apartment_ids = self._validate_apartment_ids(apartment_ids)
+        self._validate_apartments_not_in_other_active_profile(
+            unique_apartment_ids,
+            current_profile_id=None,
+            is_active=is_active,
+        )
 
         if normalized_pricing_model == "management":
             total_percent = round(float(owner_percent) + float(company_percent), 2)
@@ -249,6 +254,11 @@ class ContractService:
             raise ValueError("Фиксированная аренда не может быть отрицательной.")
 
         unique_apartment_ids = self._validate_apartment_ids(apartment_ids)
+        self._validate_apartments_not_in_other_active_profile(
+            unique_apartment_ids,
+            current_profile_id=contract_profile_id,
+            is_active=is_active,
+        )
 
         if normalized_pricing_model == "management":
             total_percent = round(float(owner_percent) + float(company_percent), 2)
@@ -630,6 +640,20 @@ class ContractService:
             seen.add(apartment_id)
 
         return unique_ids
+
+    def _validate_apartments_not_in_other_active_profile(
+        self,
+        apartment_ids: list[int],
+        current_profile_id: int | None = None,
+        is_active: int = 1,
+    ) -> None:
+        if is_active != 1:
+            return
+
+        for apartment_id in apartment_ids:
+            profile = self.contract_repo.get_active_profile_by_apartment_id(apartment_id)
+            if profile and profile.get("id") != current_profile_id:
+                raise ValueError("Квартира уже привязана к другому активному контракту.")
 
     def _attach_apartments_to_profiles(self, profiles: list[dict]) -> list[dict]:
         for profile in profiles:
