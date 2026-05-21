@@ -1,7 +1,7 @@
 import sqlite3
 import streamlit as st
 
-from config import DATABASE_PATH
+from config import APP_PASSWORD, DATABASE_PATH
 from database.schema import create_all
 
 from ui.dashboard_page import render_dashboard_page
@@ -32,6 +32,22 @@ st.set_page_config(
     page_title="CRM управления квартирами",
     layout="wide",
 )
+
+if not APP_PASSWORD:
+    st.warning("APP_PASSWORD не задан. Укажи пароль в настройках deploy.")
+    st.stop()
+
+if not st.session_state.get("authenticated"):
+    password = st.text_input("Пароль", type="password")
+
+    if st.button("Войти"):
+        if password == APP_PASSWORD:
+            st.session_state["authenticated"] = True
+            st.rerun()
+        else:
+            st.error("Неверный пароль")
+
+    st.stop()
 
 st.title("🏠 CRM управления квартирами")
 st.subheader("Квартиры, контракты, бронирования, финансы, отчёты и календарь")
