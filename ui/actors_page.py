@@ -13,12 +13,15 @@ ACTOR_TYPE_LABELS = {
 }
 
 ROLE_LABELS = {
-    "manager": "Менеджер",
+    "ceo": "CEO / Директор",
     "founder": "Основатель",
     "cofounder": "Сооснователь",
-    "director": "Директор",
+    "manager": "Менеджер",
+    "checkin_manager": "Менеджер заселения",
+    "cleaner": "Клинер",
     "accountant": "Бухгалтер",
     "admin": "Администратор",
+    "partner": "Партнёр",
     "other": "Другое",
 }
 

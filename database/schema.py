@@ -567,6 +567,79 @@ def create_all(conn):
     """)
 
     cursor.execute("""
+    CREATE TABLE IF NOT EXISTS manager_checkin_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        manager_id INTEGER NOT NULL,
+        room_id INTEGER NOT NULL,
+
+        guest_name TEXT NOT NULL,
+        guest_phone TEXT,
+        source_channel TEXT NOT NULL DEFAULT 'other',
+        booking_status TEXT NOT NULL DEFAULT 'active',
+        payment_method TEXT NOT NULL DEFAULT 'cash',
+        money_receiver TEXT NOT NULL DEFAULT 'cashbox',
+
+        checkin_date TEXT NOT NULL,
+        checkout_date TEXT NOT NULL,
+
+        booking_price REAL NOT NULL DEFAULT 0,
+        amount_received REAL NOT NULL DEFAULT 0,
+        currency TEXT NOT NULL DEFAULT 'GEL',
+        adults_count INTEGER NOT NULL DEFAULT 1,
+        children_count INTEGER NOT NULL DEFAULT 0,
+        breakfast_included INTEGER NOT NULL DEFAULT 0,
+
+        payment_status TEXT NOT NULL DEFAULT 'unpaid',
+        cash_handover_status TEXT NOT NULL DEFAULT 'pending',
+
+        contract_id INTEGER,
+        booking_id INTEGER,
+
+        ceo_received_by_actor_id INTEGER,
+        ceo_received_at TEXT,
+
+        notes TEXT,
+
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT,
+
+        FOREIGN KEY (manager_id) REFERENCES app_actors(id),
+        FOREIGN KEY (room_id) REFERENCES apartments(id),
+        FOREIGN KEY (contract_id) REFERENCES owner_contract_profiles(id),
+        FOREIGN KEY (booking_id) REFERENCES bookings(id),
+        FOREIGN KEY (ceo_received_by_actor_id) REFERENCES app_actors(id)
+    );
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS breakfast_orders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        service_date TEXT NOT NULL,
+        apartment_id INTEGER NOT NULL,
+        manager_checkin_report_id INTEGER,
+        booking_id INTEGER,
+
+        adults_count INTEGER NOT NULL DEFAULT 0,
+        children_count INTEGER NOT NULL DEFAULT 0,
+        breakfast_count INTEGER NOT NULL DEFAULT 0,
+
+        price_per_breakfast REAL NOT NULL DEFAULT 7.5,
+        total_amount REAL NOT NULL DEFAULT 0,
+
+        status TEXT NOT NULL DEFAULT 'planned',
+        notes TEXT,
+
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT,
+
+        FOREIGN KEY (apartment_id) REFERENCES apartments(id),
+        FOREIGN KEY (manager_checkin_report_id) REFERENCES manager_checkin_reports(id),
+        FOREIGN KEY (booking_id) REFERENCES bookings(id)
+    );
+    """)
+
+    cursor.execute("""
     CREATE TABLE IF NOT EXISTS guest_payments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         booking_id INTEGER NOT NULL,
@@ -668,6 +741,12 @@ def create_all(conn):
 
     # split_rules legacy
     _ensure_column(conn, "split_rules", "stay_type", "stay_type TEXT DEFAULT 'all'")
+
+    # manager check-in reports
+    _ensure_column(conn, "manager_checkin_reports", "source_channel", "source_channel TEXT NOT NULL DEFAULT 'other'")
+    _ensure_column(conn, "manager_checkin_reports", "booking_status", "booking_status TEXT NOT NULL DEFAULT 'active'")
+    _ensure_column(conn, "manager_checkin_reports", "payment_method", "payment_method TEXT NOT NULL DEFAULT 'cash'")
+    _ensure_column(conn, "manager_checkin_reports", "money_receiver", "money_receiver TEXT NOT NULL DEFAULT 'cashbox'")
 
     # expenses
     _ensure_column(conn, "expenses", "responsibility_mode_snapshot", "responsibility_mode_snapshot TEXT")

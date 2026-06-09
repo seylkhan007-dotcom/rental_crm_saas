@@ -18,6 +18,10 @@ from ui.bookings_page import render_bookings_page
 from ui.expenses_page import render_expenses_page
 from ui.payouts_page import render_payouts_page
 from ui.guest_payments_page import render_guest_payments_page
+from ui.manager_checkin_reports_page import (
+    render_manager_checkin_create_page,
+    render_manager_checkin_reports_page,
+)
 from ui.tasks_page import render_tasks_page
 
 
@@ -73,6 +77,8 @@ menu_options = [
     ("✅ Задачи", "Задачи"),
     ("💰 Расходы", "Расходы"),
     ("💳 Платежи гостей", "Платежи гостей"),
+    ("📝 Заселить гостя", "Заселить гостя"),
+    ("🧾 Контроль заселений", "Контроль заселений"),
     ("📤 Выплаты", "Выплаты"),
     ("📊 Отчёты и аналитика", "Отчёты и аналитика"),
     ("👤 Отчёт по собственнику", "Отчёт по собственнику"),
@@ -151,6 +157,12 @@ elif page == "Выплаты":
 
 elif page == "Платежи гостей":
     render_guest_payments_page(conn)
+
+elif page == "Заселить гостя":
+    render_manager_checkin_create_page(conn)
+
+elif page == "Контроль заселений":
+    render_manager_checkin_reports_page(conn)
 
 elif page == "Задачи":
     render_tasks_page(conn)
