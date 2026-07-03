@@ -462,6 +462,152 @@ class ContractService:
         self.contract_repo.delete_split_rule(rule_id)
 
     # ---------------------------------------------------------
+    # PROFIT PARTICIPANTS
+    # ---------------------------------------------------------
+
+    def create_profit_participant(
+        self,
+        contract_profile_id: int,
+        participant_type: str,
+        participant_id: int | None,
+        participant_label: str,
+        percent: float,
+        fixed_amount: float = 0,
+        priority: int = 100,
+        notes: str | None = None,
+    ) -> int:
+        profile = self.contract_repo.get_profile_by_id(contract_profile_id)
+        if not profile:
+            raise ValueError("Контракт не найден.")
+
+        normalized_participant_type = self._normalize_profit_participant_type(
+            participant_type
+        )
+        normalized_participant_label = self._normalize_profit_participant_label(
+            participant_label
+        )
+        normalized_percent = self._validate_profit_participant_percent(percent)
+        normalized_fixed_amount = self._validate_profit_participant_fixed_amount(
+            fixed_amount
+        )
+        normalized_priority = self._validate_profit_participant_priority(priority)
+        normalized_notes = (notes or "").strip() or None
+        self._validate_profit_participant_active_percent_total(
+            contract_profile_id=contract_profile_id,
+            added_percent=normalized_percent,
+        )
+
+        return self.contract_repo.create_profit_participant(
+            contract_profile_id=contract_profile_id,
+            participant_type=normalized_participant_type,
+            participant_id=participant_id,
+            participant_label=normalized_participant_label,
+            percent=normalized_percent,
+            fixed_amount=normalized_fixed_amount,
+            priority=normalized_priority,
+            notes=normalized_notes,
+        )
+
+    def list_profit_participants(self, contract_profile_id: int):
+        profile = self.contract_repo.get_profile_by_id(contract_profile_id)
+        if not profile:
+            raise ValueError("Контракт не найден.")
+
+        return self.contract_repo.list_profit_participants(contract_profile_id)
+
+    def update_profit_participant(
+        self,
+        participant_id: int,
+        participant_type: str,
+        participant_ref_id: int | None,
+        participant_label: str,
+        percent: float,
+        fixed_amount: float,
+        priority: int,
+        is_active: int,
+        notes: str | None = None,
+    ) -> None:
+        normalized_participant_type = self._normalize_profit_participant_type(
+            participant_type
+        )
+        normalized_participant_label = self._normalize_profit_participant_label(
+            participant_label
+        )
+        normalized_percent = self._validate_profit_participant_percent(percent)
+        normalized_fixed_amount = self._validate_profit_participant_fixed_amount(
+            fixed_amount
+        )
+        normalized_priority = self._validate_profit_participant_priority(priority)
+        normalized_is_active = 1 if int(is_active or 0) == 1 else 0
+        normalized_notes = (notes or "").strip() or None
+
+        self.contract_repo.update_profit_participant(
+            participant_id=participant_id,
+            participant_type=normalized_participant_type,
+            participant_ref_id=participant_ref_id,
+            participant_label=normalized_participant_label,
+            percent=normalized_percent,
+            fixed_amount=normalized_fixed_amount,
+            priority=normalized_priority,
+            is_active=normalized_is_active,
+            notes=normalized_notes,
+        )
+
+    def deactivate_profit_participant(self, participant_id: int) -> None:
+        self.contract_repo.deactivate_profit_participant(participant_id)
+
+    def delete_profit_participant(self, participant_id: int) -> None:
+        self.contract_repo.delete_profit_participant(participant_id)
+
+    def _normalize_profit_participant_type(self, participant_type: str) -> str:
+        normalized = (participant_type or "").strip()
+        if normalized not in {"actor", "company", "other"}:
+            raise ValueError("Некорректный тип участника прибыли.")
+        return normalized
+
+    def _normalize_profit_participant_label(self, participant_label: str) -> str:
+        normalized = (participant_label or "").strip()
+        if not normalized:
+            raise ValueError("Название участника прибыли обязательно.")
+        return normalized
+
+    def _validate_profit_participant_percent(self, percent: float) -> float:
+        normalized = float(percent or 0)
+        if normalized < 0:
+            raise ValueError("Процент участника прибыли не может быть отрицательным.")
+        if normalized > 100:
+            raise ValueError("Процент участника прибыли не может быть больше 100.")
+        return normalized
+
+    def _validate_profit_participant_active_percent_total(
+        self,
+        contract_profile_id: int,
+        added_percent: float,
+    ) -> None:
+        participants = self.contract_repo.list_profit_participants(contract_profile_id)
+        current_total = sum(
+            float(participant.get("percent") or 0)
+            for participant in participants
+            if participant.get("is_active") == 1
+        )
+        if current_total + added_percent > 100:
+            raise ValueError(
+                "Сумма процентов активных участников доли компании не может быть больше 100%."
+            )
+
+    def _validate_profit_participant_fixed_amount(self, fixed_amount: float) -> float:
+        normalized = float(fixed_amount or 0)
+        if normalized < 0:
+            raise ValueError("Фиксированная сумма участника прибыли не может быть отрицательной.")
+        return normalized
+
+    def _validate_profit_participant_priority(self, priority: int) -> int:
+        normalized = int(priority or 0)
+        if normalized < 0:
+            raise ValueError("Приоритет участника прибыли не может быть отрицательным.")
+        return normalized
+
+    # ---------------------------------------------------------
     # EXPENSE RULES
     # ---------------------------------------------------------
 

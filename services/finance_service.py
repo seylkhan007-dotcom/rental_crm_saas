@@ -91,7 +91,7 @@ class FinanceService:
         result["validation_errors"] = validation.errors
 
         if persist_snapshot:
-            snapshot_id = self._save_snapshot(context, result)
+            snapshot_id = self._persist_current_snapshot(context, result)
             result["snapshot_id"] = snapshot_id
 
         return result
@@ -776,6 +776,43 @@ class FinanceService:
     # SNAPSHOT
     # ---------------------------------------------------------
 
+    def _persist_current_snapshot(
+        self,
+        context: FinanceCalculationContext,
+        result: dict[str, Any],
+    ) -> int:
+        try:
+            self.conn.execute("BEGIN")
+            self._supersede_pending_finance_state(context.booking_id)
+            snapshot_id = self._save_snapshot(context, result)
+            self._save_profit_splits(context, result, snapshot_id)
+            self.conn.commit()
+            return snapshot_id
+        except Exception:
+            self.conn.rollback()
+            raise
+
+    def _supersede_pending_finance_state(self, booking_id: int) -> None:
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            UPDATE booking_profit_splits
+            SET distribution_status = 'superseded'
+            WHERE booking_id = ?
+              AND distribution_status = 'pending'
+            """,
+            (booking_id,),
+        )
+        cursor.execute(
+            """
+            UPDATE booking_finance_snapshots
+            SET snapshot_status = 'superseded'
+            WHERE booking_id = ?
+              AND snapshot_status IN ('draft', 'pending')
+            """,
+            (booking_id,),
+        )
+
     def _save_snapshot(
         self,
         context: FinanceCalculationContext,
@@ -881,8 +918,68 @@ class FinanceService:
                 result["guest_price"],
             ),
         )
-        self.conn.commit()
         return int(cursor.lastrowid)
+
+    def _save_profit_splits(
+        self,
+        context: FinanceCalculationContext,
+        result: dict[str, Any],
+        snapshot_id: int,
+    ) -> None:
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            DELETE FROM booking_profit_splits
+            WHERE booking_id = ?
+              AND finance_snapshot_id = ?
+            """,
+            (context.booking_id, snapshot_id),
+        )
+
+        basis_amount = self._to_float(result.get("distributable_profit_amount"))
+        if basis_amount <= 0:
+            return
+
+        participants = self.contract_repo.list_profit_participants(
+            context.contract_profile_id
+        )
+        active_actor_participants = [
+            participant
+            for participant in participants
+            if participant.get("is_active") == 1
+            and participant.get("participant_type") == "actor"
+            and participant.get("participant_id") is not None
+            and self._to_float(participant.get("percent")) > 0
+        ]
+
+        for participant in active_actor_participants:
+            percent = self._to_float(participant.get("percent"))
+            amount = basis_amount * percent / 100.0
+            cursor.execute(
+                """
+                INSERT INTO booking_profit_splits (
+                    booking_id,
+                    finance_snapshot_id,
+                    actor_id,
+                    role_snapshot,
+                    percent_snapshot,
+                    basis_amount_snapshot,
+                    amount_snapshot,
+                    is_manager_commission,
+                    created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP)
+                """,
+                (
+                    context.booking_id,
+                    snapshot_id,
+                    int(participant["participant_id"]),
+                    participant.get("participant_label"),
+                    percent,
+                    basis_amount,
+                    amount,
+                ),
+            )
 
     def _get_latest_snapshot(self, booking_id: int) -> dict[str, Any] | None:
         cursor = self.conn.cursor()

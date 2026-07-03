@@ -107,6 +107,10 @@ def _create_indexes(conn) -> None:
         "ON booking_profit_splits(actor_id);"
     )
     cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_booking_profit_splits_status "
+        "ON booking_profit_splits(distribution_status);"
+    )
+    cursor.execute(
         "CREATE INDEX IF NOT EXISTS idx_guest_payments_booking_id "
         "ON guest_payments(booking_id);"
     )
@@ -266,6 +270,24 @@ def create_all(conn):
         split_basis TEXT NOT NULL DEFAULT 'owner_price',
         notes TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (contract_profile_id) REFERENCES owner_contract_profiles(id)
+    );
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS contract_profit_participants (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        contract_profile_id INTEGER NOT NULL,
+        participant_type TEXT NOT NULL,
+        participant_id INTEGER,
+        participant_label TEXT NOT NULL,
+        percent REAL NOT NULL DEFAULT 0,
+        fixed_amount REAL NOT NULL DEFAULT 0,
+        priority INTEGER NOT NULL DEFAULT 100,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        notes TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT,
         FOREIGN KEY (contract_profile_id) REFERENCES owner_contract_profiles(id)
     );
     """)
@@ -533,11 +555,15 @@ def create_all(conn):
         amount_snapshot REAL NOT NULL DEFAULT 0,
 
         is_manager_commission INTEGER NOT NULL DEFAULT 0,
+        distribution_status TEXT NOT NULL DEFAULT 'pending',
+        accepted_at TEXT,
+        accepted_by_actor_id INTEGER,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
 
         FOREIGN KEY (booking_id) REFERENCES bookings(id),
         FOREIGN KEY (finance_snapshot_id) REFERENCES booking_finance_snapshots(id),
-        FOREIGN KEY (actor_id) REFERENCES app_actors(id)
+        FOREIGN KEY (actor_id) REFERENCES app_actors(id),
+        FOREIGN KEY (accepted_by_actor_id) REFERENCES app_actors(id)
     );
     """)
 
@@ -787,5 +813,10 @@ def create_all(conn):
     _ensure_column(conn, "booking_finance_snapshots", "sublease_cost_value_snapshot", "sublease_cost_value_snapshot REAL DEFAULT 0")
     _ensure_column(conn, "booking_finance_snapshots", "sublease_cost_currency_snapshot", "sublease_cost_currency_snapshot TEXT DEFAULT 'GEL'")
     _ensure_column(conn, "booking_finance_snapshots", "sublease_cost_amount_gel", "sublease_cost_amount_gel REAL DEFAULT 0")
+
+    # booking_profit_splits
+    _ensure_column(conn, "booking_profit_splits", "distribution_status", "distribution_status TEXT NOT NULL DEFAULT 'pending'")
+    _ensure_column(conn, "booking_profit_splits", "accepted_at", "accepted_at TEXT")
+    _ensure_column(conn, "booking_profit_splits", "accepted_by_actor_id", "accepted_by_actor_id INTEGER")
 
     _create_indexes(conn)

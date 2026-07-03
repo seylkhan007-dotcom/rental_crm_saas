@@ -414,6 +414,20 @@ def render_bookings_page(conn):
                 selected_booking_id
             )
 
+            if st.button(
+                "Пересчитать финансы",
+                key=f"recalculate_finance_{selected_booking_id}",
+            ):
+                try:
+                    finance_service.calculate_booking_finances(
+                        booking_id=selected_booking_id,
+                        persist_snapshot=True,
+                    )
+                    st.success("Финансы пересчитаны.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Ошибка пересчёта финансов: {e}")
+
             c1, c2 = st.columns(2)
             with c1:
                 st.metric("Сумма гостя", _safe_round(finance.get("guest_price")))

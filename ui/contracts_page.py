@@ -1,6 +1,7 @@
 import streamlit as st
 
 from services.apartment_service import ApartmentService
+from services.actor_service import ActorService
 from services.contract_service import ContractService
 from services.owner_service import OwnerService
 
@@ -75,6 +76,12 @@ SPLIT_BASIS_LABELS = {
     "custom": "Особая логика",
 }
 
+PROFIT_PARTICIPANT_TYPE_LABELS = {
+    "actor": "Сотрудник / участник",
+    "company": "Компания",
+    "other": "Другое",
+}
+
 CONTRACT_PAGE_FLASH_MESSAGE_KEY = "contracts_page_flash_message"
 
 
@@ -133,6 +140,7 @@ def render_contracts_page(conn):
     contract_service = ContractService(conn)
     owner_service = OwnerService(conn)
     apartment_service = ApartmentService(conn)
+    actor_service = ActorService(conn)
 
     st.subheader("Контракты")
     st.caption(
@@ -158,65 +166,42 @@ def render_contracts_page(conn):
     selected_contract = None
     selected_contract_id = None
 
-    st.markdown("### Профили контрактов")
+    with st.expander("📋 Все контракты", expanded=False):
+        if contract_profiles:
+            profile_rows = []
+            for profile in contract_profiles:
+                apartment_names = ", ".join(
+                    apartment.get("name", "")
+                    for apartment in profile.get("apartments", [])
+                    if apartment.get("name")
+                )
+
+                profile_rows.append(
+                    {
+                        "ID": profile["id"],
+                        "Собственник": profile.get("owner_name"),
+                        "Название": profile.get("profile_name"),
+                        "Тип договора": _label(
+                            profile.get("pricing_model"),
+                            PRICING_MODEL_LABELS,
+                        ),
+                        "Доля собственника": profile.get("owner_percent"),
+                        "Доля компании": profile.get("company_percent"),
+                        "Квартиры": apartment_names or "-",
+                        "Активен": "Да" if profile.get("is_active") == 1 else "Нет",
+                    }
+                )
+
+            st.dataframe(profile_rows, use_container_width=True)
+        else:
+            st.info("Пока нет контрактов.")
 
     if contract_profiles:
-        profile_rows = []
-        for profile in contract_profiles:
-            apartment_names = ", ".join(
-                apartment.get("name", "")
-                for apartment in profile.get("apartments", [])
-                if apartment.get("name")
-            )
-
-            profile_rows.append(
-                {
-                    "ID": profile["id"],
-                    "Собственник": profile.get("owner_name"),
-                    "Название": profile.get("profile_name"),
-                    "Модель": _label(
-                        profile.get("pricing_model"),
-                        PRICING_MODEL_LABELS,
-                    ),
-                    "База расчета": _label(
-                        profile.get("settlement_base_mode"),
-                        SETTLEMENT_BASE_MODE_LABELS,
-                    ),
-                    "Режим прибыли": _label(
-                        profile.get("profit_mode"),
-                        PROFIT_MODE_LABELS,
-                    ),
-                    "Owner %": profile.get("owner_percent"),
-                    "Company %": profile.get("company_percent"),
-                    "Кто несет OTA": _label(
-                        profile.get("ota_cost_mode"),
-                        OTA_COST_MODE_LABELS,
-                    ),
-                    "Режим расходов": _label(
-                        profile.get("expense_mode"),
-                        EXPENSE_MODE_LABELS,
-                    ),
-                    "Тип фикс. аренды": _label(
-                        profile.get("fixed_rent_type"),
-                        FIXED_RENT_TYPE_LABELS,
-                    ),
-                    "Фикс. аренда": profile.get("fixed_rent_value") or 0,
-                    "Валюта": profile.get("fixed_rent_currency") or "-",
-                    "Квартиры": apartment_names or "-",
-                    "Активен": "Да" if profile.get("is_active") == 1 else "Нет",
-                    "Комментарий": profile.get("notes"),
-                    "Создано": profile.get("created_at"),
-                }
-            )
-
-        st.dataframe(profile_rows, use_container_width=True)
-
         profile_options = {
             f"{profile['id']} - {profile.get('owner_name')} - {profile.get('profile_name')}": profile["id"]
             for profile in contract_profiles
         }
 
-        st.markdown("### Работа с конкретным контрактом")
         selected_contract_label = st.selectbox(
             "Выбери контракт",
             list(profile_options.keys()),
@@ -232,136 +217,353 @@ def render_contracts_page(conn):
                 if apartment.get("name")
             )
 
-            st.markdown("#### Выбранный контракт")
-            st.markdown(
-                f"**Собственник:** {selected_contract.get('owner_name') or '-'}  \n"
-                f"**Модель:** {_label(selected_contract.get('pricing_model'), PRICING_MODEL_LABELS)}  \n"
-                f"**Квартиры:** {selected_apartment_names or '-'}  \n"
-                f"**Owner %:** {selected_contract.get('owner_percent') or 0}  \n"
-                f"**Company %:** {selected_contract.get('company_percent') or 0}  \n"
-                f"**Активен:** {'Да' if selected_contract.get('is_active') == 1 else 'Нет'}"
+            st.markdown("### Основная информация")
+            info_cols = st.columns(4)
+            info_cols[0].metric("Собственник", selected_contract.get("owner_name") or "-")
+            info_cols[1].metric("Квартиры", selected_apartment_names or "-")
+            info_cols[2].metric(
+                "Тип договора",
+                _label(selected_contract.get("pricing_model"), PRICING_MODEL_LABELS),
             )
-    else:
-        st.info("Пока нет контрактов.")
+            info_cols[3].metric(
+                "Активность",
+                "Активен" if selected_contract.get("is_active") == 1 else "Неактивен",
+            )
 
+            st.markdown("### Деньги")
+            money_cols = st.columns(2)
+            money_cols[0].metric(
+                "Доля собственника",
+                f"{selected_contract.get('owner_percent') or 0}%",
+            )
+            money_cols[1].metric(
+                "Доля компании",
+                f"{selected_contract.get('company_percent') or 0}%",
+            )
+
+            st.markdown("### Кто делит долю компании")
+            st.caption("Эти участники делят между собой долю компании после расчёта собственника.")
+
+            try:
+                profit_participants = contract_service.list_profit_participants(
+                    selected_contract_id
+                )
+            except Exception as e:
+                st.error(f"Ошибка загрузки участников доли компании: {e}")
+                profit_participants = []
+
+            try:
+                actors = actor_service.get_active_actors()
+            except Exception as e:
+                st.error(f"Ошибка загрузки сотрудников / участников: {e}")
+                actors = []
+
+            if profit_participants:
+                participant_rows = []
+                for participant in profit_participants:
+                    participant_rows.append(
+                        {
+                            "Участник": participant.get("participant_label"),
+                            "Тип": _label(
+                                participant.get("participant_type"),
+                                PROFIT_PARTICIPANT_TYPE_LABELS,
+                            ),
+                            "Процент": participant.get("percent"),
+                            "Активен": "Да"
+                            if participant.get("is_active") == 1
+                            else "Нет",
+                        }
+                    )
+
+                st.dataframe(participant_rows, use_container_width=True)
+            else:
+                st.info("У выбранного контракта нет участников доли компании.")
+
+            with st.form("create_profit_participant_form"):
+                participant_type = st.selectbox(
+                    "Тип участника",
+                    _build_options(PROFIT_PARTICIPANT_TYPE_LABELS),
+                    format_func=lambda x: PROFIT_PARTICIPANT_TYPE_LABELS[x],
+                )
+
+                participant_ref_id = None
+                if participant_type == "actor":
+                    actor_options = {
+                        f"{actor['id']} - {actor.get('display_name') or actor.get('full_name')}": actor
+                        for actor in actors
+                    }
+                    if actor_options:
+                        selected_actor_label = st.selectbox(
+                            "Участник",
+                            list(actor_options.keys()),
+                        )
+                        selected_actor = actor_options[selected_actor_label]
+                        participant_ref_id = selected_actor["id"]
+                        participant_label = (
+                            selected_actor.get("display_name")
+                            or selected_actor.get("full_name")
+                        )
+                    else:
+                        st.warning("Нет активных сотрудников / участников.")
+                        participant_label = ""
+                elif participant_type == "company":
+                    participant_label = "Компания"
+                else:
+                    participant_label = st.text_input("Имя участника")
+
+                percent = st.number_input(
+                    "Процент от доли компании",
+                    min_value=0.0,
+                    max_value=100.0,
+                    value=0.0,
+                    step=1.0,
+                )
+                notes = st.text_area("Комментарий")
+                submitted_profit_participant = st.form_submit_button(
+                    "Добавить участника"
+                )
+
+                if submitted_profit_participant:
+                    try:
+                        participant_id = contract_service.create_profit_participant(
+                            contract_profile_id=selected_contract_id,
+                            participant_type=participant_type,
+                            participant_id=participant_ref_id,
+                            participant_label=participant_label,
+                            percent=percent,
+                            fixed_amount=0,
+                            priority=100,
+                            notes=notes,
+                        )
+                        st.success(f"Участник доли компании добавлен. ID = {participant_id}")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Ошибка добавления участника доли компании: {e}")
+
+            st.markdown("### Кто оплачивает расходы")
+
+            selected_expense_rules = [
+                rule
+                for rule in expense_rules
+                if rule.get("contract_profile_id") == selected_contract_id
+            ]
+            if selected_expense_rules:
+                expense_rows = []
+                for rule in selected_expense_rules:
+                    expense_rows.append(
+                        {
+                            "Тип расхода": rule.get("expense_type_code"),
+                            "Кто оплачивает": _label(
+                                rule.get("responsibility_mode"),
+                                RESPONSIBILITY_MODE_LABELS,
+                            ),
+                            "Собственник %": rule.get("owner_pct"),
+                            "Компания %": rule.get("company_pct"),
+                            "Гость %": rule.get("guest_pct"),
+                        }
+                    )
+
+                st.dataframe(expense_rows, use_container_width=True)
+            else:
+                st.info("У выбранного контракта нет правил расходов.")
+
+            with st.form("create_expense_rule_form"):
+                expense_type_options = list(EXPENSE_TYPE_CODES.keys())
+                expense_type_code = st.selectbox(
+                    "Тип расхода",
+                    expense_type_options,
+                    format_func=lambda x: EXPENSE_TYPE_CODES[x],
+                    key="create_expense_type_select",
+                )
+
+                responsibility_mode = st.selectbox(
+                    "Кто оплачивает",
+                    _build_options(RESPONSIBILITY_MODE_LABELS),
+                    format_func=lambda x: RESPONSIBILITY_MODE_LABELS[x],
+                )
+
+                if responsibility_mode == "split":
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        owner_pct = st.number_input(
+                            "Собственник %",
+                            min_value=0.0,
+                            max_value=100.0,
+                            value=33.0,
+                            step=1.0,
+                            key="create_owner_pct_split",
+                        )
+                    with col2:
+                        company_pct = st.number_input(
+                            "Компания %",
+                            min_value=0.0,
+                            max_value=100.0,
+                            value=34.0,
+                            step=1.0,
+                            key="create_company_pct_split",
+                        )
+                    with col3:
+                        guest_pct = st.number_input(
+                            "Гость %",
+                            min_value=0.0,
+                            max_value=100.0,
+                            value=33.0,
+                            step=1.0,
+                            key="create_guest_pct_split",
+                        )
+
+                    total_pct = round(owner_pct + company_pct + guest_pct, 2)
+                    if total_pct != 100.0:
+                        st.warning(f"⚠️ Сумма процентов = {total_pct}% (должна быть 100%)")
+                else:
+                    if responsibility_mode == "company":
+                        owner_pct = 0.0
+                        company_pct = 100.0
+                        guest_pct = 0.0
+                    elif responsibility_mode == "owner":
+                        owner_pct = 100.0
+                        company_pct = 0.0
+                        guest_pct = 0.0
+                    else:
+                        owner_pct = 0.0
+                        company_pct = 0.0
+                        guest_pct = 100.0
+
+                expense_notes = st.text_input("Комментарий к правилу расхода")
+                submitted_expense_rule = st.form_submit_button("Добавить правило")
+
+                if submitted_expense_rule:
+                    try:
+                        rule_id = contract_service.create_expense_rule(
+                            contract_profile_id=selected_contract_id,
+                            expense_type_code=expense_type_code,
+                            responsibility_mode=responsibility_mode,
+                            owner_pct=owner_pct,
+                            company_pct=company_pct,
+                            guest_pct=guest_pct,
+                            notes=expense_notes,
+                        )
+                        st.success(f"Правило расхода создано. ID = {rule_id}")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Ошибка создания правила расхода: {e}")
+    else:
         st.warning("Сначала создай хотя бы один контракт.")
 
-    st.markdown("---")
-    st.markdown("### Создать профиль контракта")
-
-    if not owners:
-        st.warning("Сначала создай хотя бы одного собственника.")
-    else:
-        pricing_model = st.radio(
-            "Модель",
-            _build_options(PRICING_MODEL_LABELS),
-            index=0,
-            format_func=lambda x: PRICING_MODEL_LABELS[x],
-        )
-
-        with st.form("create_contract_profile_form", clear_on_submit=True):
-            selected_owner = st.selectbox("Собственник", list(owner_options.keys()))
-            profile_name = st.text_input(
-                "Название контракта",
-                value="Основной контракт",
+    with st.expander("➕ Создать новый контракт", expanded=not contract_profiles):
+        if not owners:
+            st.warning("Сначала создай хотя бы одного собственника.")
+        else:
+            pricing_model = st.radio(
+                "Модель",
+                _build_options(PRICING_MODEL_LABELS),
+                index=0,
+                format_func=lambda x: PRICING_MODEL_LABELS[x],
             )
 
-            apartment_labels = st.multiselect(
-                "Квартиры контракта",
-                list(apartment_options.keys()),
-                help="Для работы бронирований привяжи договор к нужным квартирам.",
-            )
-
-            owner_percent = 0.0
-            company_percent = 0.0
-            profit_mode = "gross_split"
-            settlement_base_mode = "from_guest_price"
-            ota_cost_mode = "company_only"
-            expense_mode = "rule_based"
-            fixed_rent_type = None
-            fixed_rent_value = 0.0
-            fixed_rent_currency = "GEL"
-            notes = ""
-
-            if pricing_model == "management":
-                profit_mode = st.selectbox(
-                    "Режим расчета прибыли",
-                    _build_options(PROFIT_MODE_LABELS),
-                    format_func=lambda x: PROFIT_MODE_LABELS[x],
+            with st.form("create_contract_profile_form", clear_on_submit=True):
+                selected_owner = st.selectbox("Собственник", list(owner_options.keys()))
+                profile_name = st.text_input(
+                    "Название контракта",
+                    value="Основной контракт",
                 )
 
-                c1, c2 = st.columns(2)
-                with c1:
-                    owner_percent = st.number_input(
-                        "Owner %",
+                apartment_labels = st.multiselect(
+                    "Квартиры контракта",
+                    list(apartment_options.keys()),
+                    help="Для работы бронирований привяжи договор к нужным квартирам.",
+                )
+
+                owner_percent = 0.0
+                company_percent = 0.0
+                profit_mode = "gross_split"
+                settlement_base_mode = "from_guest_price"
+                ota_cost_mode = "company_only"
+                expense_mode = "rule_based"
+                fixed_rent_type = None
+                fixed_rent_value = 0.0
+                fixed_rent_currency = "GEL"
+                notes = ""
+
+                if pricing_model == "management":
+                    profit_mode = st.selectbox(
+                        "Режим расчета прибыли",
+                        _build_options(PROFIT_MODE_LABELS),
+                        format_func=lambda x: PROFIT_MODE_LABELS[x],
+                    )
+
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        owner_percent = st.number_input(
+                            "Owner %",
+                            min_value=0.0,
+                            max_value=100.0,
+                            value=60.0,
+                            step=1.0,
+                        )
+                    with c2:
+                        company_percent = st.number_input(
+                            "Company %",
+                            min_value=0.0,
+                            max_value=100.0,
+                            value=40.0,
+                            step=1.0,
+                        )
+                else:
+                    st.markdown("#### Условия субаренды")
+                    fixed_rent_type_options = [""] + _build_options(FIXED_RENT_TYPE_LABELS)
+                    fixed_rent_type = st.selectbox(
+                        "Тип фиксированной аренды",
+                        fixed_rent_type_options,
+                        format_func=lambda x: "— не выбрано —"
+                        if x == ""
+                        else FIXED_RENT_TYPE_LABELS[x],
+                    )
+
+                    fixed_rent_value = st.number_input(
+                        "Фиксированная стоимость аренды",
                         min_value=0.0,
-                        max_value=100.0,
-                        value=60.0,
-                        step=1.0,
+                        value=0.0,
+                        step=10.0,
                     )
-                with c2:
-                    company_percent = st.number_input(
-                        "Company %",
-                        min_value=0.0,
-                        max_value=100.0,
-                        value=40.0,
-                        step=1.0,
+
+                    fixed_rent_currency = st.selectbox(
+                        "Валюта фиксированной аренды",
+                        ["GEL", "USD", "EUR"],
                     )
-            else:
-                st.markdown("#### Условия субаренды")
-                fixed_rent_type_options = [""] + _build_options(FIXED_RENT_TYPE_LABELS)
-                fixed_rent_type = st.selectbox(
-                    "Тип фиксированной аренды",
-                    fixed_rent_type_options,
-                    format_func=lambda x: "— не выбрано —"
-                    if x == ""
-                    else FIXED_RENT_TYPE_LABELS[x],
-                )
 
-                fixed_rent_value = st.number_input(
-                    "Фиксированная стоимость аренды",
-                    min_value=0.0,
-                    value=0.0,
-                    step=10.0,
-                )
+                    notes = st.text_area("Комментарий")
+                submitted_profile = st.form_submit_button("Создать контракт")
 
-                fixed_rent_currency = st.selectbox(
-                    "Валюта фиксированной аренды",
-                    ["GEL", "USD", "EUR"],
-                )
+                if submitted_profile:
+                    try:
+                        profile_id = contract_service.create_profile(
+                            owner_id=owner_options[selected_owner],
+                            profile_name=profile_name,
+                            pricing_model=pricing_model,
+                            settlement_base_mode=settlement_base_mode,
+                            profit_mode=profit_mode,
+                            owner_percent=owner_percent,
+                            company_percent=company_percent,
+                            fixed_rent_type=fixed_rent_type or None,
+                            fixed_rent_value=fixed_rent_value,
+                            fixed_rent_currency=fixed_rent_currency,
+                            ota_cost_mode=ota_cost_mode,
+                            expense_mode=expense_mode,
+                            apartment_ids=[
+                                apartment_options[label] for label in apartment_labels
+                            ],
+                            notes=notes,
+                            is_active=1,
+                        )
+                        st.session_state[CONTRACT_PAGE_FLASH_MESSAGE_KEY] = (
+                            f"Контракт создан. ID = {profile_id}"
+                        )
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Ошибка создания контракта: {e}")
 
-                notes = st.text_area("Комментарий")
-            submitted_profile = st.form_submit_button("Создать контракт")
-
-            if submitted_profile:
-                try:
-                    profile_id = contract_service.create_profile(
-                        owner_id=owner_options[selected_owner],
-                        profile_name=profile_name,
-                        pricing_model=pricing_model,
-                        settlement_base_mode=settlement_base_mode,
-                        profit_mode=profit_mode,
-                        owner_percent=owner_percent,
-                        company_percent=company_percent,
-                        fixed_rent_type=fixed_rent_type or None,
-                        fixed_rent_value=fixed_rent_value,
-                        fixed_rent_currency=fixed_rent_currency,
-                        ota_cost_mode=ota_cost_mode,
-                        expense_mode=expense_mode,
-                        apartment_ids=[
-                            apartment_options[label] for label in apartment_labels
-                        ],
-                        notes=notes,
-                        is_active=1,
-                    )
-                    st.session_state[CONTRACT_PAGE_FLASH_MESSAGE_KEY] = (
-                        f"Контракт создан. ID = {profile_id}"
-                    )
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Ошибка создания контракта: {e}")
-
-    with st.expander("Расширенные настройки", expanded=False):
+    with st.expander("⚙ Дополнительные настройки", expanded=False):
         st.markdown("---")
         st.markdown("### Редактировать профиль контракта")
 
@@ -778,139 +980,6 @@ def render_contracts_page(conn):
             st.info("У выбранного контракта нет правил распределения для редактирования.")
         else:
             st.info("Выбери контракт, чтобы редактировать правила распределения.")
-
-        st.markdown("---")
-        st.markdown("### Правила расходов")
-
-        if expense_rules:
-            expense_rows = []
-            for rule in expense_rules:
-                expense_rows.append(
-                    {
-                        "ID": rule["id"],
-                        "Контракт": rule.get("profile_name"),
-                        "Собственник": rule.get("owner_name"),
-                        "Тип расхода": rule.get("expense_type_code"),
-                        "Режим": _label(
-                            rule.get("responsibility_mode"),
-                            RESPONSIBILITY_MODE_LABELS,
-                        ),
-                        "Owner %": rule.get("owner_pct"),
-                        "Company %": rule.get("company_pct"),
-                        "Guest %": rule.get("guest_pct"),
-                        "Комментарий": rule.get("notes"),
-                        "Создано": rule.get("created_at"),
-                    }
-                )
-
-            st.dataframe(expense_rows, use_container_width=True)
-        else:
-            st.info("Пока нет правил расходов.")
-
-        st.markdown("---")
-        st.markdown("### Создать правило расхода")
-
-        if not contract_profiles:
-            st.warning("Сначала создай хотя бы один контракт.")
-        else:
-            profile_options_for_expense = {
-                f"{profile['id']} - {profile['owner_name']} - {profile['profile_name']}": profile["id"]
-                for profile in contract_profiles
-            }
-
-            with st.form("create_expense_rule_form"):
-                selected_profile_for_expense = st.selectbox(
-                    "Контракт",
-                    list(profile_options_for_expense.keys()),
-                    key="expense_profile_select",
-                )
-
-                expense_type_options = list(EXPENSE_TYPE_CODES.keys())
-                expense_type_code = st.selectbox(
-                    "Тип расхода",
-                    expense_type_options,
-                    format_func=lambda x: EXPENSE_TYPE_CODES[x],
-                    key="create_expense_type_select",
-                )
-
-                responsibility_mode = st.selectbox(
-                    "Кто несет расход",
-                    _build_options(RESPONSIBILITY_MODE_LABELS),
-                    format_func=lambda x: RESPONSIBILITY_MODE_LABELS[x],
-                )
-
-                # Conditional display of percentage fields based on responsibility_mode
-                if responsibility_mode == "split":
-                    st.markdown("#### Разделение по процентам")
-                    st.caption("Сумма всех процентов должна быть ровно 100%")
-                
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        owner_pct = st.number_input(
-                            "Собственник %",
-                            min_value=0.0,
-                            max_value=100.0,
-                            value=33.0,
-                            step=1.0,
-                            key="create_owner_pct_split",
-                        )
-                    with col2:
-                        company_pct = st.number_input(
-                            "Компания %",
-                            min_value=0.0,
-                            max_value=100.0,
-                            value=34.0,
-                            step=1.0,
-                            key="create_company_pct_split",
-                        )
-                    with col3:
-                        guest_pct = st.number_input(
-                            "Гость %",
-                            min_value=0.0,
-                            max_value=100.0,
-                            value=33.0,
-                            step=1.0,
-                            key="create_guest_pct_split",
-                        )
-                
-                    total_pct = round(owner_pct + company_pct + guest_pct, 2)
-                    if total_pct != 100.0:
-                        st.warning(f"⚠️ Сумма процентов = {total_pct}% (должна быть 100%)")
-                else:
-                    # Auto-populate percentages for non-split modes
-                    if responsibility_mode == "company":
-                        owner_pct = 0.0
-                        company_pct = 100.0
-                        guest_pct = 0.0
-                    elif responsibility_mode == "owner":
-                        owner_pct = 100.0
-                        company_pct = 0.0
-                        guest_pct = 0.0
-                    else:  # guest
-                        owner_pct = 0.0
-                        company_pct = 0.0
-                        guest_pct = 100.0
-
-                expense_notes = st.text_input("Комментарий к правилу расхода")
-                submitted_expense_rule = st.form_submit_button("Создать правило расхода")
-
-                if submitted_expense_rule:
-                    try:
-                        rule_id = contract_service.create_expense_rule(
-                            contract_profile_id=profile_options_for_expense[
-                                selected_profile_for_expense
-                            ],
-                            expense_type_code=expense_type_code,
-                            responsibility_mode=responsibility_mode,
-                            owner_pct=owner_pct,
-                            company_pct=company_pct,
-                            guest_pct=guest_pct,
-                            notes=expense_notes,
-                        )
-                        st.success(f"Правило расхода создано. ID = {rule_id}")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Ошибка создания правила расхода: {e}")
 
         st.markdown("---")
         st.markdown("### Редактировать правило расхода")

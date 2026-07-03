@@ -457,6 +457,127 @@ class ContractRepository(BaseRepository):
         self.conn.commit()
 
     # ---------------------------------------------------------
+    # PROFIT PARTICIPANTS
+    # ---------------------------------------------------------
+
+    def create_profit_participant(
+        self,
+        contract_profile_id: int,
+        participant_type: str,
+        participant_id: int | None,
+        participant_label: str,
+        percent: float,
+        fixed_amount: float = 0,
+        priority: int = 100,
+        notes: str | None = None,
+    ) -> int:
+        self.cursor.execute(
+            """
+            INSERT INTO contract_profit_participants (
+                contract_profile_id,
+                participant_type,
+                participant_id,
+                participant_label,
+                percent,
+                fixed_amount,
+                priority,
+                notes,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """,
+            (
+                contract_profile_id,
+                participant_type,
+                participant_id,
+                participant_label,
+                percent,
+                fixed_amount,
+                priority,
+                notes,
+            ),
+        )
+        self.conn.commit()
+        return self.cursor.lastrowid
+
+    def list_profit_participants(self, contract_profile_id: int):
+        self.cursor.execute(
+            """
+            SELECT *
+            FROM contract_profit_participants
+            WHERE contract_profile_id = ?
+            ORDER BY is_active DESC, priority ASC, id ASC
+            """,
+            (contract_profile_id,),
+        )
+        rows = self.cursor.fetchall()
+        return [dict(row) for row in rows]
+
+    def update_profit_participant(
+        self,
+        participant_id: int,
+        participant_type: str,
+        participant_ref_id: int | None,
+        participant_label: str,
+        percent: float,
+        fixed_amount: float,
+        priority: int,
+        is_active: int,
+        notes: str | None = None,
+    ) -> None:
+        self.cursor.execute(
+            """
+            UPDATE contract_profit_participants
+            SET
+                participant_type = ?,
+                participant_id = ?,
+                participant_label = ?,
+                percent = ?,
+                fixed_amount = ?,
+                priority = ?,
+                is_active = ?,
+                notes = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (
+                participant_type,
+                participant_ref_id,
+                participant_label,
+                percent,
+                fixed_amount,
+                priority,
+                is_active,
+                notes,
+                participant_id,
+            ),
+        )
+        self.conn.commit()
+
+    def deactivate_profit_participant(self, participant_id: int) -> None:
+        self.cursor.execute(
+            """
+            UPDATE contract_profit_participants
+            SET
+                is_active = 0,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (participant_id,),
+        )
+        self.conn.commit()
+
+    def delete_profit_participant(self, participant_id: int) -> None:
+        self.cursor.execute(
+            """
+            DELETE FROM contract_profit_participants
+            WHERE id = ?
+            """,
+            (participant_id,),
+        )
+        self.conn.commit()
+
+    # ---------------------------------------------------------
     # EXPENSE RULES
     # ---------------------------------------------------------
 
